@@ -274,7 +274,47 @@ if isfield(BUILDING,'DemandE')
         Plant.Data.Demand.H = BUILDING.DemandH;
     end
 end
-if update ==0
+if nnz(BUILDING.DistCool)>0
+    if isfield(Plant,'Generator')
+        if ~strcmp(Plant.Generator(end).Type,'DistrictCooling') || (length(Plant.Generator)>1 && ~strcmp(Plant.Generator(end-1).Type,'DistrictCooling'))
+            Gen.Type = 'DistrictCooling';
+            Gen.Name = 'District Cooling';
+            Gen.Source = 'Electricity'; %update this later, you need a pricing system for cooling
+            Gen.Output = [];
+            Gen.Output.Cooling = [0:.1:1];
+            Gen.Output.Capacity = [0:.1:1];
+            Gen.Size = 1;
+            Gen.Enabled = 1;
+            Gen.VariableStruct = [];
+            Gen.OpMatA = [];
+            if isfield(Plant.Generator(1),'OpMatB')
+                Gen.OpMatB = [];
+            end
+            Plant.Generator(end+1) = Gen;
+        end
+    end
+end
+if nnz(BUILDING.DistHeat)>0
+    if isfield(Plant,'Generator')
+        if ~strcmp(Plant.Generator(end).Type,'DistrictHeating') || (length(Plant.Generator)>1 && ~strcmp(Plant.Generator(end-1).Type,'DistrictHeating'))
+            Gen.Type = 'DistrictHeating';
+            Gen.Name = 'District Heating';
+            Gen.Source = 'Electricity'; %update this later, you need a pricing system for cooling
+            Gen.Output = [];
+            Gen.Output.Heating = [0:.1:1];
+            Gen.Output.Capacity = [0:.1:1];
+            Gen.Size = 1;
+            Gen.Enabled = 1;
+            Gen.VariableStruct = [];
+            Gen.OpMatA = [];
+            if isfield(Plant.Generator(1),'OpMatB')
+                Gen.OpMatB = [];
+            end
+            Plant.Generator(end+1) = Gen;
+        end
+    end
+end
+if update==0
     h = menu('Historical Demand Curve Fits Not Updated ','Update Now','Do not update');
     if h ==1
         pushbuttonHistFit_Callback(hObject, eventdata, handles,1)
@@ -479,7 +519,7 @@ function pushbuttonRemove_Callback(hObject, eventdata, handles)
 % hObject    handle to pushbuttonRemove (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
-global BUILDING Model_dir update
+global BUILDING Model_dir update Plant
 update =0;
 val = get(handles.listboxExistingBuild,'value');
 buildTypeName = {'SDRest'; 'FFRest'; 'Sch-pri'; 'Sch-sec'; 'LgOff'; 'MdOff'; 'SmOff'; 'MRapt'; 'LgHotel'; 'SmHotel'; 'Hospital'; 'OutP'; 'Retail'; 'StMall'; 'SMarket'; 'ware';};
@@ -558,6 +598,20 @@ end
 BUILDING.DistHeat = DistHeat;
 BUILDING.DistCool = DistCool;
 BUILDING.NameList = NameList;
+if (nnz(BUILDING.DistHeat)==0 || isempty(BUILDING.DistHeat))
+    if strcmp(Plant.Generator(end).Type,'DistrictHeating')
+        Plant.Generator = Plant.Generator(1:end-1);
+    elseif strcmp(Plant.Generator(end-1).Type,'DistrictHeating')
+        Plant.Generator = [Plant.Generator(1:end-2),Plant.Generator(end)];
+    end
+end
+if (nnz(BUILDING.DistCool)==0 || isempty(BUILDING.DistCool))
+    if strcmp(Plant.Generator(end).Type,'DistrictCooling')
+        Plant.Generator = Plant.Generator(1:end-1);
+    elseif strcmp(Plant.Generator(end-1).Type,'DistrictCooling')
+        Plant.Generator = [Plant.Generator(1:end-2),Plant.Generator(end)'];
+    end
+end
 set(handles.listboxExistingBuild,'Value',1)
 listboxExistingBuild_Callback(handles.listboxExistingBuild, eventdata, handles)
 popupmenuAxes_Callback(hObject, eventdata, handles)

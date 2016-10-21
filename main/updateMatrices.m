@@ -30,7 +30,11 @@ for seq = 1:1:length(Outs)
     for p = 1:1:length(Plant.optimoptions.Outputs) %reserve nS steps for each output type
         mat = Organize.(Plant.optimoptions.Outputs{p}).Demand{1};
         index = Organize.(Plant.optimoptions.Outputs{p}).Demand{2};
-        QP.(mat)(index) = Demand.(Plant.optimoptions.Outputs{p});
+        if strcmp(mat,'b')
+            QP.b(index) = -Demand.(Plant.optimoptions.Outputs{p});%Ax<beq, so b and A must be negative so you are producing more than enough
+        else
+            QP.beq(index) = Demand.(Plant.optimoptions.Outputs{p});
+        end
     end
 
     %update initial condition

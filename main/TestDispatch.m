@@ -356,7 +356,8 @@ if E == 4% Test Dynamic Dispatch
     Cost = sum(NetCostCalc(GenDisp,Time,Input));
     disp(['Optimal dispatch cost is : ', num2str(Cost)])
     plotDispatch2(GenDisp,Demand,Time,1)
-    
+    coststr = {['Cost: $' num2str(round(Cost,2))]};
+    annotation(figure(1),'Textbox',[.65,.7,.1,.1],'FontSize',15,'String',cellstr(coststr),'FitBoxToText','on','EdgeColor','none')
     %% Run Baseline% will keep all generators on at all times. May not be feasible
     MapWaitbarHandle=waitbar(0,'Running Baseline Dynamic Economic Dispatch');
     Organize = Plant.OpMatB.Organize;
@@ -403,6 +404,8 @@ if E == 4% Test Dynamic Dispatch
         Baseline.NetCost = NetCostCalc(Baseline.GeneratorState,Time,Input);
         disp(['Standard Dynamic Economic Dispatch cost is : ', num2str(sum(Baseline.NetCost))])
         plotDispatch2(Baseline.GeneratorState,Demand,Time,10)
+        coststr = {['Cost: $' num2str(round(sum(Baseline.NetCost),2))]};
+        annotation(figure(10),'Textbox',[.65,.7,.1,.1],'FontSize',15,'String',cellstr(coststr),'FitBoxToText','on','EdgeColor','none')
     else disp('Baseline simulation is infeasible');
     end
 end

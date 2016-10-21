@@ -22,23 +22,26 @@ end
 if isfield(Demand,'T')
     Demand = rmfield(Demand,'T');
 end
-S = fieldnames(Demand);
+S = Plant.optimoptions.Outputs;
 for q = 1:1:length(S)
     name = {};
-    name2 = {};
+%     name2 = {};
     stor =[];
     plotBars =[];
     negBars =[];
     StoragePower =[];
     StorageState = [];
+    nLegend = zeros(1,length(Plant.Generator));
     for i = 1:1:length(Plant.Generator)
         if isfield(Plant.Generator(i).OpMatA,'Stor') && isfield(Plant.Generator(i).OpMatA.output,S{q}) % energy storage
             stor(end+1) = i;
             StoragePower(:,end+1) = (GeneratorDispatch(1:end-1,i)-GeneratorDispatch(2:end,i))./dt;
             plotBars(:,end+1) = [0;max(0,StoragePower(:,end));];
             negBars(:,end+1) = -[0;max(0,-StoragePower(:,end));];
-            name(end+1) = {['Discharge ',Plant.Generator(i).Name]};
-            name2(end+1) = {['Charge ',Plant.Generator(i).Name]};
+            name(end+1) = cellstr(Plant.Generator(i).Name);
+            nLegend(i) = length(plotBars(1,:));
+%             name(end+1) = {['Discharge ',Plant.Generator(i).Name]};
+%             name2(end+1) = {['Charge ',Plant.Generator(i).Name]};
             if isfield(Plant.Generator(i).OpMatA.output,'E')
                 bat = Plant.Generator(i).VariableStruct;
                 DischEff = (bat.Voltage-bat.DischResist/10)/bat.Voltage;
@@ -47,25 +50,48 @@ for q = 1:1:length(S)
             else
                 StorageState(:,end+1) = GeneratorDispatch(:,i)/Plant.Generator(i).VariableStruct.DischargeEff;
             end
-        elseif strcmp(Plant.Generator(i).Type,'Utility') && isfield(Plant.Generator(i).OpMatA.output,S{q})
+        elseif (strcmp(Plant.Generator(i).Type,'Utility')||~isempty(strfind(Plant.Generator(i).Type,'District'))) && isfield(Plant.Generator(i).OpMatA.output,S{q}) %utilities
             plotBars(:,end+1) = max(0,GeneratorDispatch(:,i));
             name(end+1) = cellstr(Plant.Generator(i).Name);
             if min(GeneratorDispatch(:,i))<0
-                negBars(:,end+1)= min(0,GeneratorDispatch(:,i));
-                name2(end+1) = cellstr('Sellback');
+                negBars(:,end+1)= -min(0,GeneratorDispatch(:,i));
+                nLegend(i) = length(plotBars(1,:));
+%                 name2(end+1) = cellstr('Sellback');
             end
         elseif isfield(Plant.Generator(i).OpMatA.output,S{q}) && ~(strcmp(Plant.Generator(i).Type,'Chiller') && strcmp(S{q},'E')) %generators & renewables
             plotBars(:,end+1) = GeneratorDispatch(:,i)*Plant.Generator(i).OpMatA.output.(S{q})(1); %accounts for Hratio or such when gen has multiple outputs
             name(end+1) = cellstr(Plant.Generator(i).Name);
         end
     end
-    
+    %put storage at the end, this section should only exist for plotting
+    %figures for comparison in a paper
+    if isempty(stor)
+        plotBars(:,end+1) = zeros(length(plotBars(:,1)),1);
+    elseif stor(end)<length(plotBars(1,:))
+        plotBars = [plotBars(:,1:stor(1)-1),plotBars(:,(stor(end)+1):end),plotBars(:,stor)];
+        name = {name{1:stor(1)-1},name{stor(end)+1},name{stor}};
+        nLegend(stor) = nLegend(stor)+length(plotBars(1,(stor(end)+1):end));
+        nLegend = [nLegend(1:stor(1)-1),nLegend(stor(end)+1:end),nLegend(stor)];
+    end
+    nLegend = nonzeros(nLegend);
     %% Plot
     if ~isempty(plotBars)
 %         clf(fig+q-1)
         figure(fig+q-1)
         hold off
-        bar(Time,plotBars(2:end,:),'stacked','barwidth',1)
+        plotTime = sort([Time(1)-1,Time,Time-.0001,Time(end)+dt(end)-.0001]);%make sure that there is a step wise characteristic of the plot
+        posBars = zeros(length(plotBars(:,1))*2,length(plotBars(1,:)));
+        posBars(1:2:end) = plotBars;
+        posBars(2:2:end) = plotBars;
+        h1 = area(plotTime,posBars,'Linestyle','none');
+        if strcmp(S{q},'C')
+            colormap cool
+        elseif strcmp(S{q},'H')
+            colormap autumn
+        else
+            colormap parula
+        end
+        legend(name,'Fontsize',16)
         hold on
         if ~isempty(negBars)
             OoM = log10(max(sum(plotBars,2)+sum(negBars,2)));
@@ -86,28 +112,38 @@ for q = 1:1:length(S)
         end
         negTicks = 0;
         if ~isempty(negBars)
-            h = bar(Time,negBars(2:end,:),'stacked','barwidth',1);
+            negBarsPlot = zeros(length(negBars(:,1))*2,length(negBars(1,:)));
+            negBarsPlot(1:2:end) = negBars;
+            negBarsPlot(2:2:end) = negBars;
+            h = area(plotTime,negBarsPlot,'Linestyle','none');%(2:end,:)'stacked','barwidth',1);
             negTicks = floor(min(min(negBars))/Yspace);
             if abs(negTicks)>3
                 Yspace = 2*Yspace;
                 negTicks = floor(min(min(negBars))/Yspace);
             end
-            set(h(length(h)),'FaceColor','c')
-            set(h(1), 'FaceColor', 'm')
+            storageColors = {[.6 0 .6],[1 .8 .2],[.2 1 1]};%purple [.4 0 .6] if using jet, [.6 0 .6] if default map, orange, cyan
+            for i = 1:1:length(nLegend)
+                set(h1(nLegend(i)),'FaceColor',storageColors{i-(rem(i,3)-i)})
+                set(h(i),'FaceColor',storageColors{i-(rem(i,3)-i)})
+            end
         end
         Ymin = Yspace*negTicks;
+        if isempty(Ymin)
+            Ymin = 0;
+        end
         pTicks = Ymax/Yspace;
-        legend([name name2],'FontSize',16)
+        legend(name,'Fontsize',16,'Orientation','Horizontal','Location','NorthOutside','Box','off')
+%         legend([name name2],'FontSize',16)
         xlim([Time(1)-dt(1), Time(end)])%[0,25]
         ylim([Ymin,Ymax])
         set(gca,'YTick',Ymin:Yspace:Ymax,'FontSize',14)
         set(gca, 'XTick',axTick,'XTickLabel', {axIndex})%{xticks(1:nS+1)})
         %% Storage
         if ~isempty(stor)
-            [AX, H1, H2] =plotyy(0,0,Time,StorageState(2:end,:)');
+            [AX, H1, H2] =plotyy(0,0,[0,Time],StorageState');
             set(AX,{'ycolor'},{'k';'k'})
-            set(H2(end),'Color','k','LineStyle','--','LineWidth',2)
-            set(H2(1),'Color','r','LineStyle','--','LineWidth',2)
+            set(H2(end),'Color','k','LineStyle','-','LineWidth',2)
+            set(H2(1),'Color','r','LineStyle','-','LineWidth',2)
             xlim(AX(1),[Time(1)-dt(1),Time(end)])
             xlim(AX(2),[Time(1)-dt(1),Time(end)])
             set(AX(1),'XTick',axTick,'XTickLabel',{axIndex},'FontSize',16)
@@ -129,10 +165,10 @@ for q = 1:1:length(S)
             Ymin = Yspace*negTicks;            
             ylim(AX(2),[Ymin,Ymax])
             set(AX(2),'YTick', Ymin:Yspace:Ymax)
-            ylabel(AX(2),'State of Charge (kWh)','Color','k','FontSize',16)
+            ylabel(AX(2),'State of Charge (kWh)','Color','k','FontSize',18)
         end
-        xlabel('Time (hour)','Color','k','FontSize',16)
-        ylabel('Generation (kW)','Color','k','FontSize',16)
+        xlabel('Time (hour)','Color','k','FontSize',18)
+        ylabel('Generation (kW)','Color','k','FontSize',18)
         plotBars=[];
     end
 end

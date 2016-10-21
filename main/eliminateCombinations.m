@@ -31,7 +31,11 @@ ninc =[];
 if ~isempty(Heating) %always enable heaters (negligable assume start-up costs and LB is usually ~0)
     mat = Heating.Organize.Demand{1};
     index = Heating.Organize.Demand{2};
-    QPsingle.(mat)(index) = Heating.Demand;
+    if strcmp(mat,'beq')
+        QPsingle.beq(index) = Heating.Demand;
+    else
+        QPsingle.b(index) = -Heating.Demand;
+    end
     heater = Heating.gen;
     storH = Heating.stor;
     utilH = Heating.util;
@@ -54,7 +58,7 @@ if~isempty(Cooling) %find best cooling combo first
     for j = 1:1:length(chill)
         i = chill(j);
         k = Organize.States{i};
-        COP = QPsingle.(mat2)(index,k);
+        COP = -1/QPsingle.(mat2)(1,k);%1/fraction in electric demand
         minRate(i) = 1/COP*min(minRate(gen));
     end
     for j = 1:1:length(storC)
@@ -62,10 +66,15 @@ if~isempty(Cooling) %find best cooling combo first
         k = Organize.States{i};
         minRate(i) = QPsingle.f(k);
     end
+    for j = 1:1:length(utilC)
+        i = utilC(j);
+        k = Organize.States{i};
+        minRate(i) = QPsingle.f(k(1));
+    end
     k = 1;
     while k<=length(chill)
         i = chill(k);
-        if MinPower(i)>=LB(i)%if the initial condition is greater than the lower bound plus the ramp rate for that time step then lock it on
+        if MinPower(i)>LB(i) && Cooling.Demand>0%if the initial condition is greater than the lower bound plus the ramp rate for that time step then lock it on
             chill = chill(chill~=i);%remove rom the list of generators that can be turned on/off
             ninc(end+1) = i; %force it to always be on
         else k = k+1;
@@ -89,7 +98,7 @@ if~isempty(Cooling) %find best cooling combo first
     UBcool(utilC) = UB(utilC);
     LBcool(utilC) = LB(utilC);
     %% maybe take this part out, but it should speed it up in some cases.
-    if isempty(storC) %no storage, pre-emptively solve chillers
+    if isempty(storC) %&& isempty(utilC) %no storage, or utility, pre-emptively solve chillers
         [~,index] = sort(minRate(chill));    %sort least expensive to most expensive
         chill = chill(index);
         %% create a matrix of all possible combinations
@@ -121,7 +130,9 @@ if~isempty(Cooling) %find best cooling combo first
         K = K(nzK==min(nzK),:);
         cost = K*minRate';
         [~,costIndex] = min(cost);
-        chill = nonzeros(K(costIndex(1),chill))'; %first combo that fits UB and LB should be cheapest.
+        if ~isempty(costIndex)
+            chill = nonzeros(K(costIndex(1),chill))'; %first combo that fits UB and LB should be cheapest.
+        end
     else
         ninc = [ninc storC utilC];
     end
@@ -183,14 +194,20 @@ end
 sumUB = (K(:,gen)>0)*MaxPower(gen)';
 sumLB = (K(:,(gen))>0)*LB(gen)';
 if ~isempty(ninc)
-    sumUB = sumUB + (K(:,ninc))*MaxPower(ninc)';
-    sumLB = sumLB + (K(:,ninc))*MinPower(ninc)';
+    if isempty(sumUB)
+        sumUB = zeros(length(K(:,1)),1);
+    end
+    if isempty(sumLB)
+        sumLB = zeros(length(K(:,1)),1);
+    end
+    sumUB = sumUB + (K(:,ninc)>0)*MaxPower(ninc)';
+    sumLB = sumLB + (K(:,ninc)>0)*MinPower(ninc)';
 end
 keep = (sumUB>=Demand).*(sumLB<=Demand);%keep the rows where the ub is capable of meeting demand and the lower bound is low enough to meet demand
 K = K(keep>0,:);
 
 %for the dual heating + electric case, remove combos that can't meet both demands
-if ~isempty(Heating) %combined heating and electric generators
+if ~isempty(Heating)%combined heating and electric generators
     UBheat = zeros(nG,1);
     LBheat = zeros(nG,1);
     UBheat([heater storH utilH]) = MaxPower([heater storH utilH]);
@@ -199,7 +216,11 @@ if ~isempty(Heating) %combined heating and electric generators
     LBheat(CHPindex) = MinPower(CHPindex).*Hratio;
     sumUB = (K>0)*UBheat;
     sumLB = (K>0)*LBheat;
-    keep = (sumUB>=Heating.Demand).*(sumLB<=Heating.Demand);%keep the rows where the ub is capable of meeting demand and the lower bound is low enough to meet demand
+    if strcmp(Heating.Organize.Demand{1},'beq')%if no excess heat
+        keep = (sumUB>=Heating.Demand).*(sumLB<=Heating.Demand);%keep the rows where the ub is capable of meeting demand and the lower bound is low enough to meet demand
+    else %if generators can dump excess heat, then Heat is in the b matrix
+        keep = (sumUB>=Heating.Demand);%keep the rows where the ub is capable of meeting demand
+    end
     K = K(keep>0,:);
 end
 
@@ -208,7 +229,7 @@ if ~isempty(Cooling) %combined heating and electric generators
     if isempty(storC) %pre-determined chiller dispatch 
         lines = length(K(:,1));
         K(:,[chill storC utilC]) = ones(lines,1)*[chill storC utilC]; %lock on the chosen chillers
-        chill = [];
+%         chill = [];
     end
     sumUB = (K(:,[chill,storC,utilC])>0)*UBcool([chill,storC,utilC]);
     sumLB = (K(:,([chill,storC,utilC]))>0)*LBcool([chill,storC,utilC]);
@@ -274,7 +295,11 @@ if ~isempty(K)
                     if row<length(K(:,1))%no need to do for last row
                         %remove combinations that are the best combination and additional more expensive generators
                         nRow = length(K(:,1))-row;
-                        posCheaperGen = gen(logical((minRate(gen)<bestCostPerkW).*(1-(K(row,gen)>0))));%possibly cheaper generators that are not on for this case, but could be on
+                        if ~isempty(gen)
+                            posCheaperGen = gen(logical((minRate(gen)<bestCostPerkW).*(1-(K(row,gen)>0))));%possibly cheaper generators that are not on for this case, but could be on
+                        else
+                            posCheaperGen = [];
+                        end
                         if ~isempty(posCheaperGen)
                             ckRows = ~any((ones(nRow,1)*K(row,gen)-K(row+1:end,gen))>0,2); %identify future rows that have the current set of active generators + more
                             noCheaper = ~any(K(row+1:end,posCheaperGen),2); %select columns of K with possibly cheaper generators, if row is all zeros it can be eliminated

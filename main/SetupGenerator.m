@@ -63,7 +63,12 @@ figHandle = handles.figure1;
 Generator = Plant.Generator(SYSINDEX);
 
 set(handles.editName,'string',Generator.Name)
-set(handles.editSize,'string',Generator.Size)
+if max(Generator.Output.Cooling)>0
+    set(handles.editSize,'string',Generator.Size./3.517)
+    set(handles.editSize,'Value',Generator.Size./3.517)
+else
+    set(handles.editSize,'string',Generator.Size)
+end
 
 if strcmp(Generator.Source, 'NG')
     set(handles.uipanelGenType,'SelectedObject', handles.radiobuttonNatGas)
@@ -143,6 +148,7 @@ function editSize_Callback(hObject, eventdata, handles)
 % handles    structure with handles and user data (see GUIDATA)
 global Generator
 Generator.Size=str2double(get(hObject,'string'));
+set(handles.editSize,'Value',str2double(get(hObject,'string')));
 
 
 function editSize_CreateFcn(hObject, eventdata, handles)
@@ -580,6 +586,7 @@ else
         Generator.Type = 'Heater';
     elseif max(Generator.Output.Cooling)>0 
         Generator.Type = 'Chiller';
+        Generator.Size = 3.517.*get(handles.editSize,'Value');%conversion factor: cooling in kW = 3.517*cooling in tons
     elseif max(Generator.Output.Steam)>0 
         Generator.Type = 'Boiler';
     end
@@ -622,6 +629,7 @@ else
     elseif max(Generator.Output.Cooling)>0 
         savedir=fullfile(Model_dir,'component library','Chiller',Generator.Name);
         Generator.Type = 'Chiller';
+        Generator.Size = 3.517.*get(handles.editSize,'Value');%conversion factor: cooling in kW = 3.517*cooling in tons
     elseif max(Generator.Output.Steam)>0 
         savedir=fullfile(Model_dir,'component library','Boiler',Generator.Name);
         Generator.Type = 'Boiler';

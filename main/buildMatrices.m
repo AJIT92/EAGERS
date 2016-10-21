@@ -82,6 +82,12 @@ while seq<=length(Outs);
             elseif isfield(Plant.Generator(i).OpMatA.output,'H')
                 utilH(i) = i;
             end
+        elseif strcmp(Plant.Generator(i).Type,'DistrictCooling')
+            if strcmp(Outs{seq}, 'C') || (strcmp(Outs{seq},'E') && Plant.optimoptions.sequential == 0)
+                utilC(i) = i;
+            end
+        elseif strcmp(Plant.Generator(i).Type,'DistrictHeating')
+            utilH(i) = i;
         elseif isfield(Plant.Generator(i).OpMatB,'Stor')
             if Plant.optimoptions.sequential == 0  && strcmp('E',Outs{seq}) &&  isfield(Plant.Generator(i).OpMatB.output,'C')
                 storC(i) = i;
@@ -272,6 +278,9 @@ while seq<=length(Outs);
                 k = k+nS; %add nS states 
             end
         end
+    end
+    if isfield(Organize,'H') && Plant.optimoptions.excessHeat
+        QP.A((Organize.H.Demand{2}),:) = -QP.A((Organize.H.Demand{2}),:); %must be negative because Ax<=b
     end
     QP.H = diag(QP.H);
     QPall.QP.(Outs{seq})= QP;% quadratic programing matrices (H, f, Aeq, beq, A, b, ub, lb) -- parts may need to be updated later 

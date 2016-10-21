@@ -78,14 +78,11 @@ movegui(gcf,'center');
 DataNames1 = cellstr(strcat('Demand.',fields(Plant.Data.Demand)));
 set(handles.popupmenuData,'string',[cellstr('Temperature');DataNames1],'value',1)
 
-if isfield(Plant,'Dispatch')
-    names = {};
-    for i= 1:1:length(Plant.Generator)
-        names(end+1) = {Plant.Generator(i).Name};
-    end
-    set(handles.popupmenuGenerators,'string',names,'value',1)
-else set(handles.popupmenuGenerators,'string',{},'value',0)
+names = {};
+for i= 1:1:length(Plant.Generator)
+    names(end+1) = {Plant.Generator(i).Name};
 end
+set(handles.popupmenuGenerators,'string',names,'value',1)
 
 value=strmatch(Plant.Name,list,'exact');
 set(handles.popupmenuPlant,'string',list,'value',value)
@@ -107,6 +104,7 @@ if isfield(Plant,'Dispatch')
     end
     popupmenuGenerators_Callback(handles.popupmenuGenerators,eventdata,handles)
 end
+
 
 if isfield(Plant.Data,'Holidays')
     Holidays = Plant.Data.Holidays;
@@ -190,30 +188,31 @@ LEG ={};
 X=[];
 Y =[];
 currentstr = [];
-if isfield(Plant.Dispatch,'Dispatch') 
-    Timestamp = Plant.Dispatch.Dispatch.Timestamp;
-    Ts2 = (Timestamp(3)-Timestamp(2))*24;%time of 1 step in hours
-    if (Plant.Dispatch.Dispatch.Timestamp(1)<=Timeplot && Plant.Dispatch.Dispatch.Timestamp(end)>Timeplot)
-        Xs = nnz(Timestamp<=Timeplot);
-        XFs = nnz(Timestamp<=Timeplot+1);
-        X = Timestamp(Xs:XFs);
-        Y = 0*X;
-    elseif ~isfield(Plant.Dispatch,'Historical')
-        Xs = 1;
-        XFs = min(length(Timestamp),nnz(Timestamp<=(Timestamp(1)+1)));
-        X = Timestamp(Xs:XFs);
-        Y = 0*X;
-    end
-    if ~isempty(Y)
-        currentstr = 'Disp';
-        LEG={};
-        if (~isempty(strfind(Plant.Generator(val).Type,'Storage'))||~isempty(strfind(Plant.Generator(val).Type,'Hvac'))) %might neet to add gentype 12 for thermal energy storage from Hvac
-            Y(2:end,1)=zeros(XFs-Xs,1);%there is no storage in the baseline %(Plant.Dispatch.Baseline.GeneratorState(Xs:XFs-1,val)-Plant.Dispatch.Baseline.GeneratorState(Xs+1:XFs,val))/Ts2;%energy storage power output in kW
-%             Y(2:end,2)=(Plant.Dispatch.Predicted(2).GenDisp(Xs:XFs-1,val)-Plant.Dispatch.Predicted(2).GenDisp(Xs+1:XFs,val))/Ts2;%energy storage power output in kW
-            if get(handles.checkboxEnergyStorageState,'Value')==1
-                currentstr = 'SOC';
-            end
-        else
+if isfield(Plant,'Dispatch')
+    if isfield(Plant.Dispatch,'Dispatch') 
+        Timestamp = Plant.Dispatch.Dispatch.Timestamp;
+        Ts2 = (Timestamp(3)-Timestamp(2))*24;%time of 1 step in hours
+        if (Plant.Dispatch.Dispatch.Timestamp(1)<=Timeplot && Plant.Dispatch.Dispatch.Timestamp(end)>Timeplot)
+            Xs = nnz(Timestamp<=Timeplot);
+            XFs = nnz(Timestamp<=Timeplot+1);
+            X = Timestamp(Xs:XFs);
+            Y = 0*X;
+        elseif ~isfield(Plant.Dispatch,'Historical')
+            Xs = 1;
+            XFs = min(length(Timestamp),nnz(Timestamp<=(Timestamp(1)+1)));
+            X = Timestamp(Xs:XFs);
+            Y = 0*X;
+        end
+        if ~isempty(Y)
+            currentstr = 'Disp';
+            LEG={};
+            if (~isempty(strfind(Plant.Generator(val).Type,'Storage'))||~isempty(strfind(Plant.Generator(val).Type,'Hvac'))) %might neet to add gentype 12 for thermal energy storage from Hvac
+                Y(2:end,1)=zeros(XFs-Xs,1);%there is no storage in the baseline %(Plant.Dispatch.Baseline.GeneratorState(Xs:XFs-1,val)-Plant.Dispatch.Baseline.GeneratorState(Xs+1:XFs,val))/Ts2;%energy storage power output in kW
+%               Y(2:end,2)=(Plant.Dispatch.Predicted(2).GenDisp(Xs:XFs-1,val)-Plant.Dispatch.Predicted(2).GenDisp(Xs+1:XFs,val))/Ts2;%energy storage power output in kW
+                if get(handles.checkboxEnergyStorageState,'Value')==1
+                    currentstr = 'SOC';
+                end
+            else
             %% Baseline is not currently calculated
 %             if length(Plant.Dispatch.Baseline.Timestamp)<length(X) %this occurs during variable timesteps or short horizons
 %                 Y(:,1)=interp1([Plant.Dispatch.Baseline.Timestamp,X(end)],[Plant.Dispatch.Baseline.GeneratorState(:,val);Plant.Dispatch.Baseline.GeneratorState(1,val)],X);
@@ -222,57 +221,63 @@ if isfield(Plant.Dispatch,'Dispatch')
 %             end
 %             Y(:,2)=Plant.Dispatch.Predicted(2).GenDisp(Xs:XFs,val);
 %             LEG={'Baseline','Predicted'};
+            end
         end
     end
 end
-  
-if isfield(Plant.Dispatch,'Historical')
-    Timestamp = Plant.Data.Timestamp;
-    Ts = (Timestamp(2)-Timestamp(1))*24;%time of 1 step in hours
-    Xs = nnz(Timestamp<=Timeplot);
-    XFs = nnz(Timestamp<=Timeplot+1);
-    HistDisp.X = Timestamp(Xs:XFs);
-    if (~isempty(strfind(Plant.Generator(val).Type,'Storage'))||~isempty(strfind(Plant.Generator(val).Type,'Hvac'))) %energy storage
-        if get(handles.checkboxEnergyStorageState,'Value')
-            HistDisp.Y = [0*HistDisp.X 0*HistDisp.X];
-            HistDisp.Y(:,2) = Plant.Dispatch.Historical(Xs:XFs,val);
-        else HistDisp.Y = 0*HistDisp.X;
-        end
-        for t = max(Xs,2):1:XFs %avoid calculating @ t= 1
-            HistDisp.Y(t,1) = (Plant.Dispatch.Historical(t,val)-Plant.Dispatch.Historical(t-1,val))/Ts; %energy storage power output in kW
-        end
-        LEG(end+1:end+2) = {'Historical (kW)','Historical SOC (kWh)'};
-    else HistDisp.Y = Plant.Dispatch.Historical(Xs:XFs,val);%not energy storage
-        LEG(end+1)={'Historical'};
-    end
-end
-if isfield(Plant.Dispatch,'RunData')
-    Timestamp = Plant.Dispatch.RunData.Timestamp;
-    Ts = (Timestamp(2)-Timestamp(1))*24;%time of 1 step in hours
-    if Timestamp(1)<=Timeplot && Timestamp(end)>Timeplot
+
+if isfield(Plant,'Dispatch')
+    if isfield(Plant.Dispatch,'Historical')
+        Timestamp = Plant.Data.Timestamp;
+        Ts = (Timestamp(2)-Timestamp(1))*24;%time of 1 step in hours
         Xs = nnz(Timestamp<=Timeplot);
         XFs = nnz(Timestamp<=Timeplot+1);
-    else
-        Xs = 1;
-        XFs = min(length(Timestamp),nnz(Timestamp<=(Timestamp(1)+1)));
-    end
-    RunDisp.X = Timestamp(Xs:XFs);
-    if (~isempty(strfind(Plant.Generator(val).Type,'Storage'))||~isempty(strfind(Plant.Generator(val).Type,'Hvac'))) %energy storage
-        if get(handles.checkboxEnergyStorageState,'Value')
-            RunDisp.Y = [0*RunDisp.X 0*RunDisp.X];
-            for t = max(Xs,2):1:XFs %avoid calculating @ t= 1
-                RunDisp.Y(t,1) = (Plant.Dispatch.RunData.GeneratorState(t-1,val)-Plant.Dispatch.RunData.GeneratorState(t,val))/Ts; %energy storage power output in kW
+        HistDisp.X = Timestamp(Xs:XFs);
+        if (~isempty(strfind(Plant.Generator(val).Type,'Storage'))||~isempty(strfind(Plant.Generator(val).Type,'Hvac'))) %energy storage
+            if get(handles.checkboxEnergyStorageState,'Value')
+                HistDisp.Y = [0*HistDisp.X 0*HistDisp.X];
+                HistDisp.Y(:,2) = Plant.Dispatch.Historical(Xs:XFs,val);
+            else HistDisp.Y = 0*HistDisp.X;
             end
-            RunDisp.Y(:,2) = Plant.Dispatch.RunData.GeneratorState(Xs:XFs,val);
-            LEG = {'Dispatch (kW)'; 'Dispatch SOC (kWh)'};
-        else RunDisp.Y = 0*RunDisp.X;
             for t = max(Xs,2):1:XFs %avoid calculating @ t= 1
-                RunDisp.Y(t,1) = (Plant.Dispatch.RunData.GeneratorState(t-1,val)-Plant.Dispatch.RunData.GeneratorState(t,val))/Ts; %energy storage power output in kW
+                HistDisp.Y(t,1) = (Plant.Dispatch.Historical(t,val)-Plant.Dispatch.Historical(t-1,val))/Ts; %energy storage power output in kW
             end
-            LEG(end+1) = {'Dispatch (kW)'};
+            LEG(end+1:end+2) = {'Historical (kW)','Historical SOC (kWh)'};
+        else HistDisp.Y = Plant.Dispatch.Historical(Xs:XFs,val);%not energy storage
+            LEG(end+1)={'Historical'};
         end
-    else RunDisp.Y = Plant.Dispatch.RunData.GeneratorState(Xs:XFs,val);%not energy storage
-         LEG(end+1)={'Dispatch'};
+    end
+end
+
+if isfield(Plant,'Dispatch')
+    if isfield(Plant.Dispatch,'RunData')
+        Timestamp = Plant.Dispatch.RunData.Timestamp;
+        Ts = (Timestamp(2)-Timestamp(1))*24;%time of 1 step in hours
+        if Timestamp(1)<=Timeplot && Timestamp(end)>Timeplot
+            Xs = nnz(Timestamp<=Timeplot);
+            XFs = nnz(Timestamp<=Timeplot+1);
+        else
+            Xs = 1;
+            XFs = min(length(Timestamp),nnz(Timestamp<=(Timestamp(1)+1)));
+        end
+        RunDisp.X = Timestamp(Xs:XFs);
+        if (~isempty(strfind(Plant.Generator(val).Type,'Storage'))||~isempty(strfind(Plant.Generator(val).Type,'Hvac'))) %energy storage
+            if get(handles.checkboxEnergyStorageState,'Value')
+                RunDisp.Y = [0*RunDisp.X 0*RunDisp.X];
+                for t = max(Xs,2):1:XFs %avoid calculating @ t= 1
+                    RunDisp.Y(t,1) = (Plant.Dispatch.RunData.GeneratorState(t-1,val)-Plant.Dispatch.RunData.GeneratorState(t,val))/Ts; %energy storage power output in kW
+                end
+                RunDisp.Y(:,2) = Plant.Dispatch.RunData.GeneratorState(Xs:XFs,val);
+                LEG = {'Dispatch (kW)'; 'Dispatch SOC (kWh)'};
+            else RunDisp.Y = 0*RunDisp.X;
+                for t = max(Xs,2):1:XFs %avoid calculating @ t= 1
+                    RunDisp.Y(t,1) = (Plant.Dispatch.RunData.GeneratorState(t-1,val)-Plant.Dispatch.RunData.GeneratorState(t,val))/Ts; %energy storage power output in kW
+                end
+                LEG(end+1) = {'Dispatch (kW)'};
+            end
+        else RunDisp.Y = Plant.Dispatch.RunData.GeneratorState(Xs:XFs,val);%not energy storage
+            LEG(end+1)={'Dispatch'};
+        end
     end
 end
 if ~isempty(X)||~isempty(RunDisp)||~isempty(HistDisp)
@@ -338,6 +343,12 @@ if isfield(Plant,'Dispatch')
     end
     set(handles.popupmenuGenerators,'string',names,'value',1)
     popupmenuGenerators_Callback(handles.popupmenuGenerators,eventdata,handles)
+else%even if there is no dispatch set dropdown correctly
+    names = {};
+    for i= 1:1:length(Plant.Generator)
+        names(end+1) = {Plant.Generator(i).Name};
+    end
+    set(handles.popupmenuGenerators,'string',names,'value',1)
 end
 if ~isfield(Plant.optimoptions,'Buffer')
     Plant.optimoptionsBuffer = 20; % percentage for buffer on storage

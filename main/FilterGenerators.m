@@ -57,6 +57,7 @@ while ~cheapest
         heater = Organize.(Outs{seq}).heater;
         Hratio = Organize.(Outs{seq}).Hratio;
         CHPindex = Organize.(Outs{seq}).CHPindex;
+        allutil = [utility,utilC,utilH];
 
         [~,index] = sort(CostPerkW(thisSeq),1,'descend');
         thisSeq = thisSeq(index); %sorted from largest constant cost to smallest (general goal is to turn off more expensive ones first
@@ -80,7 +81,7 @@ while ~cheapest
     
         %% Rule 2 while 2nd dispatch corresponds to IC, extend until first time it needs to turn on (ramp rate to optimal setting the first time its on)   
         for i = 1:1:nG
-            if ~OnOff(i) %if it is set off and is already off, lock it off for the initial condition
+            if ~OnOff(i) && ~ismember(i,allutil)%if it is set off and is already off, lock it off for the initial condition
                 Locked(1,i) = false;
 %             elseif ~OnOff(i) %if it is set off but is still ramping down, set it off at the soonest possible step
 %                 t_zeroOutput = sum((IC(1,i)./dXtotal(:,i))>=1) + 1;%the number of steps until the generator reaches 0 
@@ -134,7 +135,7 @@ while ~cheapest
                 if~isempty(starts)
                     p = 1;
                     RampUp = dX(starts(1),i);
-                    while RampUp<SecondDisp(starts(1)+1,i)
+                    while RampUp<SecondDisp(starts(1)+1,i) && (starts(1)-p>0)
                         RampUp = RampUp+dX(starts(1)-p,i);
                         p = p+1;
                     end
@@ -156,27 +157,29 @@ while ~cheapest
             end
             %% Rule 4: If off for a long enough segment in optimal dispatch, try turning off for as much of that as possible given ramp rates
             for k = 1:1:length(starts)
-                if sum(dX(stops(k):starts(k),i))>(SecondDisp(stops(k),i) + SecondDisp(starts(k)+1,i) + 2*LB(i)) %can ramp all the way down, and back up, and a little more
-                    L2 = Locked;
-                    %find step when it can hit zero given setting at Disp(stops(k)
-                    n=1;
-                    RampDown = dX(stops(k),i);
-                    while RampDown<SecondDisp(stops(k),i)
-                        RampDown = RampDown+dX(stops(k)+n,i);
-                        n = n+1;
-                    end
-                    p = 1;
-                    RampUp = dX(starts(k),i);
-                    while RampUp<SecondDisp(starts(k)+1,i)
-                        RampUp = RampUp+dX(starts(k)-p,i);
-                        p = p+1;
-                    end
-                    L2((stops(k)+n):(starts(k)-p+1),i) = false;
-                    [~,newCost,Feasible] = DispatchQP(QP,Organize,L2);
-                    newCost = newCost + sum(sum(L2.*OnCost));
-                    if Feasible==1 && newCost<Cost
-                        Locked = L2;
-                        Cost = newCost;
+                if ~isempty(stops) && length(stops)>=k
+                    if sum(dX(stops(k):starts(k),i))>(SecondDisp(stops(k),i) + SecondDisp(starts(k)+1,i) + 2*LB(i)) %can ramp all the way down, and back up, and a little more
+                        L2 = Locked;
+                        %find step when it can hit zero given setting at Disp(stops(k)
+                        n=1;
+                        RampDown = dX(stops(k),i);
+                        while RampDown<SecondDisp(stops(k),i)
+                            RampDown = RampDown+dX(stops(k)+n,i);
+                            n = n+1;
+                        end
+                        p = 1;
+                        RampUp = dX(starts(k),i);
+                        while RampUp<SecondDisp(starts(k)+1,i)
+                            RampUp = RampUp+dX(starts(k)-p,i);
+                            p = p+1;
+                        end
+                        L2((stops(k)+n):(starts(k)-p+1),i) = false;
+                        [~,newCost,Feasible] = DispatchQP(QP,Organize,L2);
+                        newCost = newCost + sum(sum(L2.*OnCost));
+                        if Feasible==1 && newCost<Cost
+                            Locked = L2;
+                            Cost = newCost;
+                        end
                     end
                 end
             end
@@ -184,7 +187,7 @@ while ~cheapest
             if length(stops)>length(starts)
                 n=stops(end);
                 RampDown = dX(n,i);
-                while RampDown<SecondDisp(stops(end),i) && n<(nS-1)
+                while RampDown<SecondDisp(stops(end),i) && n<(nS-1) && n>0
                     RampDown = RampDown+dX(n,i);
                     n = n-1;
                 end

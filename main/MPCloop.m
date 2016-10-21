@@ -92,6 +92,7 @@ for s = 1:1:length(OpMats) %not currently set up well for 2 optimization matrice
     allUtility = [utility, utilC, utilH];
     CHPindex = nonzeros((1:nG).*(Hratio>0))';
     if ~isempty(renew)
+        [RenPower,~] = RenewableOutput(DateSim,0,'Actual');
         Operation.GeneratorState(t_mpc,renew) = RenPower;
     end
     if ~isempty(chill) || ~isempty(utilC) || ~isempty(storC)
@@ -271,10 +272,14 @@ setGen = max(setGen,LBmpc');
 %% use MPC to find new generator set-points
 spMPC = zeros(length(GenSSindex.Primary(:,2))+length(GenSSindex.Secondary(:,2)),1);
 spMPC(GenSSindex.Primary(:,2),1) = 0; 
-spMPC(GenSSindex.Primary(:,2),1) = setGen(thisSeq);
+spMPC(GenSSindex.Primary(:,2),1) = setGen(allGen);
 spMPC(GenSSindex.Secondary(:,2),1) = Hratio(CHPindex)'.*setGen(CHPindex);%Y(J ,max(1,t-1));
 Xf = [X(:,2)-X(:,1); Y(:,1)-spMPC(:,1);]; % Xf = [x(t)-x(t-1); y(t)- SP]
 [spGEN(allGen)]=MPCsolve(spGEN(allGen),SSmpc.A,SSmpc.B,SSmpc.C,MPCweights,30,Xf);
+% if nnz(spGEN<min(LBmpc',zeros(size(spGEN))))>0
+%     disp('warning set points are too low in mpc loop, resetting to LB')
+%     spGEN(spGEN<LBmpc') = LBmpc(spGEN<LBmpc');
+% end
 
 for j = 1:1:length(allGen)
     i = allGen(j);
@@ -282,8 +287,10 @@ for j = 1:1:length(allGen)
         spGEN(i) = LBmpc(i); %force set-point to be lower bound as generator is brought on-line
     end
     if OnOff(i)==0 && CurrentState.Generators(i)>LBmpc(i)
-        n = nnz(ShutdownRamp(i).t<=(DateSim+Tmpc/3600/24));
-        spGEN(i) = ShutdownRamp(i).Pow(n);%change spgen if controlled shutdown is occuring
+        if ~isempty(ShutdownRamp)
+            n = nnz(ShutdownRamp(i).t<=(DateSim+Tmpc/3600/24));
+            spGEN(i) = ShutdownRamp(i).Pow(n);%change spgen if controlled shutdown is occuring
+        end
     end
 end
 t_mpc = t_mpc+1;

@@ -171,13 +171,13 @@ function [OpMatA, OpMatB, LB, UB, dX_dt,SSi] = loadDistrictHeating(Gen)
 %system (but their individual constraints will boud ho much can be put back
 %on the district heating grid.
 UB = inf;
-LB = -inf; %can buy or sell to district heating
+LB = 0; %can buy or sell to district heating
 dX_dt = inf;
 SSi =[];
 OpMatA.states = {'X'};
 OpMatA.output.H = 1;
 OpMatA.X.H = 0; %no quadratic term for the cost here
-OpMatA.X.f = 1; %there is a linear term for the cost though
+OpMatA.X.f = 2; %there is a linear term for the cost
 OpMatA.X.lb = 0; %LB = -sum(UB(find(GenType==2)).*Hratio(find(GenType==2)))-sum(UB(find(GenType==4)));
 OpMatA.X.ub = inf;
 OpMatA.xL = 'nS';
@@ -185,15 +185,36 @@ OpMatA.req = '0';
 OpMatA.r = '0';
 OpMatB = OpMatA;
 
-function [OpMatA, OpMatB, LB, UB, dX_dt] = loadDistrictCooling(Gen)
+function [OpMatA, OpMatB, LB, UB, dX_dt, SSi] = loadDistrictCooling(Gen)
 % this function loads the parameters for a district cooling supply
 % it is very similar to the electric utility, but there is no sell back
 % capability and the lower bound is dependent on the chillers in the system
-%nearly same as district heating
-[OpMatA, ~, LB, UB, dX_dt] = loadDistrictHeating(Gen);
-OpMatA = rmfield(OpMatA,'output');
+%nearly same as district heating/utility with sellback
+OpMatA.states = {'X'};
+OpMatA.req = '0';%# of rows taken in Ax = b
+OpMatA.r = '0';%# of rows taken in Ax <= b
+OpMatA.xL = 'nS';%# of states
 OpMatA.output.C = 1;
+% OpMatA.Z.f = 2;
+% OpMatA.Z.H = 0;
+% OpMatA.Z.lb = 0;
+% OpMatA.Z.ub = inf;
+% OpMatA.Y.f = -6;%penalize putting power back on the grid
+% OpMatA.Y.H = 0;
+% OpMatA.Y.lb = -inf;
+% OpMatA.Y.ub = 0;
+% OpMatA.link.eq = [1, -1, -1]; %X = Y+Z
+% OpMatA.link.beq = 0;
+OpMatA.X.f = 2;
+OpMatA.X.H = 0;
+OpMatA.X.lb = 0;
+OpMatA.X.ub = inf;
+LB = 0;
+UB = inf;
+dX_dt = inf;
+SSi = [];
 OpMatB = OpMatA;
+
 
 function [OpMatA, OpMatB, LB, UB, dX_dt,SSi] = loadElectricGenerator(Gen)
 % this function loads the parameters for an electric generator generators
@@ -205,7 +226,7 @@ function [OpMatA, OpMatB, LB, UB, dX_dt,SSi] = loadCHPGenerator(Gen)
 global Plant
 UB = Gen.Size;
 if isfield(Gen.Output,'Cooling')&& Gen.Output.Cooling(end)>0
-    LB = Gen.VariableStruct.Startup.Cooling(end); %chiller
+    LB = Gen.VariableStruct.Startup.Cooling(1); %chiller
     costTerms = GenCosts(Gen,LB,UB,'Cooling');
     if Plant.optimoptions.sequential == 0
         Cratio = Gen.Output.Cooling(end);
@@ -279,7 +300,7 @@ if costTerms.I == UB %linear fit use 1 state
 else
     OpMatB.constCost = costTerms.Intercept(4);
     OpMatB.states = {'Y';'Z'};%x, beta, gamma
-    OpMatB.xL = '2*nS+1';% 3 states + IC
+    OpMatB.xL = '2*nS+1';% 2 states + IC
     OpMatB.req = '1'; %link equality, one per timestep, and one for the initial condition
     OpMatB.r = '2*nS'; %ramp inequality
 
@@ -301,6 +322,7 @@ function [OpMatA, OpMatB, LB, UB, dX_dt,SSi] = loadChiller(Gen)
 % this function loads the parameters for a chiller generators
 % it is very similar to the way Electric Generators are loaded
 [OpMatA, OpMatB, LB, UB, dX_dt,SSi] = loadCHPGenerator(Gen);
+
 
 function [OpMatA, OpMatB, LB, UB, dX_dt,SSi] = loadHeater(Gen)
 % this function loads the parameters for a heater generator.
@@ -548,7 +570,7 @@ costTerms.Convex(3) = max(0,costTerms.Convex(3));%ensure a positive H value
 
 %% Fit B: piecewise convex with non-zero y-intercept, first find point I beyond which cost curve is convex
 dc_dxi = (c(2:end)-c(1:end-1))./(x(2:end)-x(1:end-1));
-convex = (dc_dxi(2:end)>1.001*(dc_dxi(1:end-1)));
+convex = and((dc_dxi(2:end)>1.001*(dc_dxi(1:end-1))),(dc_dxi(1:end-1)>0));
 k = length(convex);
 P_i = find(convex==1,1,'first');
 if ~isempty(P_i)%possibly a convex section
@@ -563,11 +585,18 @@ end
 if isempty(P_i) || P_i==k%never convex, make a linear fit
     costTerms.I = x(end);
     costTerms.Intercept = (c(end)-c(1))/(x(end)-x(1)); %beta extends to UB, fit still has a constant term
+    if costTerms.Intercept<=0
+        costTerms.Intercept = c(end)/x(end);
+    end
     costTerms.Intercept(2:3) = 0;
 else
     costTerms.I = x(P_i+1);
     alpha = x(P_i+1:end)-x(P_i+1);
-    c_alpha = c(P_i+1:end)-c(P_i+1); %cost associated with alpha segment
+    c_alpha = c(P_i+1:end)-c(P_i+1);%cost associated with alpha segment
+%     c_alpha = zeros(length(alpha),1);
+%     for j = 1:1:length(alpha)
+%         c_alpha(j) = sum(c(P_i+1:P_i+j));
+%     end
     C =[alpha .5*alpha.^2];
     maxSlopeBeta = c_alpha(end)/alpha(end);
     costTerms.Intercept = min(maxSlopeBeta,(c(P_i+1)-c(1))/(x(P_i+1)-x(1))); %slope of beta segment

@@ -183,7 +183,8 @@ function manual_Callback(hObject, eventdata, handles)
 function slowsimulation_Callback(hObject, eventdata, handles)
 function fastsimulation_Callback(hObject, eventdata, handles)
 function simultaneous_Callback(hObject, eventdata, handles)
-function sequential_Callback(hObject, eventdtaa, handles)
+function sequential_Callback(hObject, eventdata, handles)
+function excessHeat_Callback(hObject, eventdata, handles)
 
 
 function Interval_CreateFcn(hObject, eventdata, handles)

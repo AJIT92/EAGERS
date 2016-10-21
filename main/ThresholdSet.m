@@ -38,6 +38,9 @@ for i = 1:1:nG
 end
 include.E = {'CHP Generator', 'Electric Generator'};
 include.C = {'Chiller'};
+if ~Plant.optimoptions.sequential
+    include.E = {'CHP Generator', 'Electric Generator', 'Chiller'};
+end
 Outs = fieldnames(QPall);
 EnabledA = OnOff;
 % EnabledA = IC>=LB;

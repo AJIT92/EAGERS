@@ -54,30 +54,47 @@ for t = 1:1:nS %for every timestep
             Heating.chp = Organize.(Outs{s}).CHPindex;
             Heating.Hratio = Organize.(Outs{s}).Hratio;
             Heating.Organize = Organize.('H');
+            if ~Plant.optimoptions.excessHeat
+                QP.beq(Organize.H.Demand{2}) = Demand.H(t);
+            else %if you can dump excess heat, then load the heat demand into the b matrix Ax<=b
+                QP.b(Organize.H.Demand{2}) = -Demand.H(t);
+            end
         else Heating = [];
         end
         if strcmp(Outs{s},'E') && isfield(Demand,'C') && Plant.optimoptions.sequential == 0
-            Cooling.Demand = Demand.C(t);
             Cooling.stor = storC;
             Cooling.gen = chill;
             Cooling.util = utilC;
             Cooling.Organize = Organize.('C');
+            if Demand.C(t)>1 %ignore forecasting errors
+                Cooling.Demand = Demand.C(t);
+                QP.beq(Organize.C.Demand{2}) = Demand.C(t);
+            else Cooling.Demand = 0;
+            end
         else Cooling = [];
         end
+        MaxPower = zeros(1,nG);
+        MinPower = zeros(1,nG);
+        constCost = zeros(1,nG);
         for j = 1:1:length(allUtility)
             i = allUtility(j);
+            MaxPower(i) = UB(i); 
+            MinPower(i) = LB(i); 
+            outUtility = fieldnames(Plant.Generator(i).OpMatA.output);
             n_states = Organize.(Outs{s}).States{i};
             n_inf = isinf(QP.ub(n_states));
             if nnz(n_inf)>0 %remove infinity bounds
-                QP.ub(n_states(n_inf>0)) = max(5*Demand.(Outs{s})(t),5*sum(UB(~isinf(UB)))); %upper bound of utility is 5 times demand or sum of other generation
+                QP.ub(n_states(n_inf>0)) = max(5*Demand.(outUtility{1})(t),5*sum(UB(~isinf(UB)))); %upper bound of utility is 5 times demand or sum of other generation
+            end
+            n_neg_inf = isinf(-QP.lb(n_states));
+            if nnz(n_inf)>0 %remove infinity bounds
+                QP.lb(n_states(n_neg_inf>0)) = min(-5*Demand.(outUtility{1})(t),-5*sum(UB(~isinf(UB)))); %upper bound of utility is 5 times demand or sum of other generation
+%                 MinPower(i) = QP.lb(n_states(1));
             end
         end
         if strcmp(limit,'initially constrained')
             IC(allStor) = StorageProfile(t,allStor); %refer to initial dispatch for SOC of storage to calculate marginal value
         end
-        MaxPower = zeros(1,nG);
-        MinPower = zeros(1,nG);
-        constCost = zeros(1,nG);
         for j = 1:1:length(allGen)
             i = allGen(j);
             if Plant.Generator(i).Enabled ==0
@@ -96,11 +113,6 @@ for t = 1:1:nS %for every timestep
                     constCost(i) = Plant.Generator(i).OpMatB.constCost.*scaleCost(t,i)*dt(t);
                 end
             end
-        end
-        for j = 1:1:length(allUtility)
-            i = allUtility(j);
-            MaxPower(i) = UB(i); 
-            MinPower(i) = LB(i); 
         end
         for j = 1:1:length(allStor)
             i = allStor(j);

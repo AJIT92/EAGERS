@@ -78,6 +78,8 @@ for j = 1:1:length(Outs)
     allStor = [stor, storC, storH];
     allGen = [thisSeq, chill, heater];
     allUtility = [utility, utilC, utilH];
+%     stor = ~ismember([1:1:nG],[allStor,allGen,allUtility]);
+%     Enabled(stor) = 1;
     for i = 1:1:length(allUtility)
         if Plant.Generator(allUtility(i)).Enabled
             Enabled(allUtility(i)) =1;

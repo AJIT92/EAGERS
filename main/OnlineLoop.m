@@ -5,10 +5,11 @@ function OnlineLoop
 %% this function does not re-calculate the dispatch, but may re-allocate the distribution of power between generators & storage
 %% this function subjects generators to different upper and lower bounds if they are in the process of ramping up or down according to the dispatch optimization
 %% changes in the allocation of storage are penalized via the final state: landing at the same EC as the current dispatch time interval has zero cost, but a marginal cost = margninal cost of generation
-global Plant  dischEff%variables from loadGenerator
+global Plant  dischEff LB%variables from loadGenerator
 global setGen UBopt LBopt EC % from the dispatch loop
 global UBmpc LBmpc ShutdownRamp%editied in this loop & passed down to MPC loop
 global CurrentState DateSim OnOff %from the MPC loop
+global Threshold
 
 %dischEff: Discharge efficiency of energy storage
 %t_mpc: a counter for the MPC loop between sucessive online optimization (index for Operation)
@@ -41,6 +42,8 @@ stor = [];
 UBmpc = UBopt;
 downPow = [];
 lockOff = zeros(1,nG);
+lockon = zeros(1,nG);
+LBmpc = LB;
 for i = 1:1:nG
     if isfield(Plant.Generator(i).OpMatB,'Stor')
         stor(end+1) = i;
@@ -49,7 +52,7 @@ for i = 1:1:nG
         maxDischarge = (IC(i)-LBopt(i))/dtDispLoop(1);%Plant.optimoptions.Resolution;
         UBmpc(i) = min(dX(i),maxDischarge);
         LBmpc(i) = max(-dX(i),-maxCharge);
-    elseif ~strcmp(Plant.Generator(i).Source, 'Renewable') && ~strcmp(Plant.Generator(i).Type, 'Utility')
+    elseif ~strcmp(Plant.Generator(i).Source, 'Renewable') && ~strcmp(Plant.Generator(i).Type, 'Utility') && ~strcmp(Plant.Generator(i).Type, 'DistrictCooling') && ~strcmp(Plant.Generator(i).Type, 'DistrcitHeating')
         if OnOff(i)>0
             UBmpc(i) = min(UBopt(i),(CurrentState.Generators(i)+dX(i)*nS));
             LBmpc(i) = max(LBopt(i),CurrentState.Generators(i)-dX(i)*nS);
@@ -67,9 +70,34 @@ for i = 1:1:nG
                 end
             end
         end
+    elseif strcmp(Plant.Generator(i).Type, 'DistrictCooling') || strcmp(Plant.Generator(i).Type, 'DistrcitHeating')
+        LBmpc(i) = LBopt(i);
+        UBmpc(i) = UBopt(i);
+        lockon(i) = i;
+    else %if it is renewable, utility, or district heat/cool
+        lockon(i) = i;
     end
 end
+%make sure that if there is a switch, then locked gets adjusted accordingly
+Outs = Plant.optimoptions.Outputs;
+tswitch = inf;
+genswitchon = [];
+genswitchoff = [];
+for s = 1:1:length(Outs)
+    if isfield(Threshold.(Outs{s}),'t')
+        time = min(Threshold.(Outs{s}).t);
+        if time<tswitch
+            genswitchon = Threshold.(Outs{s}).On;
+            genswitchoff = Threshold.(Outs{s}).Off;
+        end
+    else time = inf;
+    end
+    tswitch = min(time,tswitch);
+end
+tlocked = nnz(Timestamp(A)<=tswitch); %number that should have the first set locked
+
 lockOff = nonzeros(lockOff);
+lockon = nonzeros(lockon);
 scaleCost = updateGeneratorCost(DateSim);
 marginCost = updateMarginalCost([IC;EC],scaleCost,dt);%give the marginal cost for the power from now until the end of the online loop
 QPall = Plant.Online(index).QP;
@@ -78,6 +106,12 @@ Organize = Plant.Online(index).Organize;
 Locked = false(nS+1,nG);
 Locked(:,OnOff>0) =true;
 Locked(:,lockOff) = false; %if its ramping down lock it off in the QP.
+% Locked(2:end,EC>LBopt) = true; %if its ramping up allow it on
+Locked(1:end,lockon) = true;
+if tlocked<nS
+    Locked(tlocked+1:end,genswitchon) = true;
+    Locked(tlocked+1:end,genswitchoff) = false;
+end
 %subtract the ramp down power from the demand
 if ~isempty(downPow)
     Outs = fieldnames(downPow);
@@ -88,4 +122,7 @@ end
 [GenDisp,~,~] = DispatchQP(QPall,Organize,Locked);
 setGen = zeros(nG,1);
 setGen(OnOff>0) = GenDisp(2,(OnOff>0));
-setGen(stor) = (IC(stor)-EC(stor) - GenDisp(2,stor)).*(3600/Plant.optimoptions.Topt); %convert change in energy storage to power
+setGen(EC>LBopt) = GenDisp(2,(EC>LBopt));
+if ~isempty(stor)
+    setGen(stor) = (IC(stor)-EC(stor) - GenDisp(2,stor)).*(3600/Plant.optimoptions.Topt); %convert change in energy storage to power
+end

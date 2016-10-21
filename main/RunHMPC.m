@@ -195,6 +195,7 @@ end
 GenAvailTime = ones(1,length(Plant.Generator)).*DateSim;
 
 spGEN = [];%this is the setpoint for generators in MPCloop
+ShutdownRamp = [];
 
 
 %% Step 3: Run initial dispatch and optimization

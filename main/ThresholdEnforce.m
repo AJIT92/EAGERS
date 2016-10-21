@@ -22,6 +22,7 @@ for s = 1:1:length(S)
             disp('thresholdEnforce')
         end
         CostFit = (ceil(b)-b)*Thresh.Cost(:,floor(b))+(b-floor(b))*Thresh.Cost(:,ceil(b));
+        CostFit(isnan(CostFit)) = 0;
         [~,I] = min(CostFit);
 
         if I<=A && I<length(CostFit) %past optimal point to switch, and optimal is not at end

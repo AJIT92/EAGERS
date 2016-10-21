@@ -51,7 +51,7 @@ for i = 1:1:nG
         end
         Dispatch.Dispatch.GeneratorState(Si,i) = CurrentState.Generators(i); %previous energy stored +- energy dispatched
         Dispatch.Dispatch.GeneratorInput(Si,i) = sum(Operation.GeneratorState(Charge,i)*(Tmpc/3600)); % input or charging of energy storage
-    else %generators & utilities
+    elseif ~strcmp(Plant.Generator(i).Source, 'Renewable') %generators & utilities
         Dispatch.Dispatch.GeneratorState(Si,i) = sum(Operation.GeneratorState(1:nMPC,i))/nMPC; %average power
         Dispatch.RunData.GeneratorState(rIndex,i) = Operation.GeneratorState(:,i);
         Dispatch.Dispatch.GeneratorInput(Si,i) = sum(Operation.GeneratorInput(1:nMPC,i))/nMPC; %average fuel

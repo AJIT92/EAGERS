@@ -1,6 +1,6 @@
 function DispatchLoop%% calculate new optimal Dispatch
 global Plant RealTime DispatchWaitbar Dispatch Si dischEff scaleTime UB LB % NumSteps loaded by GUI & load generators
-global CurrentState DateSim %changed in MPC loop
+global CurrentState DateSim LBmpc %changed in MPC loop
 global EC targetCharge targetDischarge  %result from dispatch loop used in Online loop
 options = Plant.optimoptions;
 Time = buildTimeVector(options);%% set up dt vector of time interval length
@@ -14,6 +14,13 @@ if RealTime
     CurrentState.Generators(stor) = CurrentState.Generators(stor)/(3600)*scaleTime; %convert to kWh & scale storage
     IC = max(0,CurrentState.Generators);
 else
+    for i = 1:1:nG
+        if isfield(Plant.Generator(i).OpMatA.output, 'C') %make sure chillers have positive initial conditions
+            if CurrentState.Generators(i)<0
+                CurrentState.Generators(i) = LBmpc(i);
+            end
+        end
+    end
     IC = CurrentState.Generators;
 end
 if ~isempty(dischEff) %must be a storage system

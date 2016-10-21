@@ -67,6 +67,12 @@ while seq<=length(Outs)
             elseif isfield(Plant.Generator(i).OpMatA.output,'H')
                 utilH(i) = i;
             end
+        elseif strcmp(Plant.Generator(i).Type,'DistrictCooling')
+            if strcmp(Outs{seq}, 'C') || (strcmp(Outs{seq},'E') && Plant.optimoptions.sequential == 0)
+            utilC(i) = i;
+            end
+        elseif strcmp(Plant.Generator(i).Type,'DistrictHeating')
+            utilH(i) = i;
         elseif isfield(Plant.Generator(i).OpMatB,'Stor')
             if Plant.optimoptions.sequential == 0  && strcmp('E',Outs{seq}) &&  isfield(Plant.Generator(i).OpMatB.output,'C')
                 storC(i) = i;
@@ -195,6 +201,9 @@ while seq<=length(Outs)
             end
         end
         QP.H = diag(H);
+        if isfield(Organize,'H') && Plant.optimoptions.excessHeat && ~strcmp(Outs{seq},'C')
+            QP.A(Organize.H.Demand{2},:) = -QP.A(Organize.H.Demand{2},:);
+        end
         QPall.(Outs{seq})(tS) = QP;
     end
     seq = seq+1;

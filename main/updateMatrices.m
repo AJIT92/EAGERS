@@ -95,16 +95,16 @@ for seq = 1:1:length(Outs)
                         %penalize more than 10% deviation in power output
                         PeakChargePower = Plant.Generator(i).OpMatA.Ramp.b(1);
                         dSOC_10perc = .1*PeakChargePower*Time(end); %energy (kWh) if charging at 10%
-                        H(nX(nSi)) = 2*marginCost.(Out{j}).Min/dSOC_10perc;%quadratic final value term loaded into SOC(t=nS)  %factor of 2 because its solving C = 0.5*x'*H*x + f'*x
+                        H(nX(nSi)) = -2*marginCost.(Out{j}).Min/dSOC_10perc;%quadratic final value term loaded into SOC(t=nS)  %factor of 2 because its solving C = 0.5*x'*H*x + f'*x
                         QP.f(nX(nSi)) = -marginCost.(Out{j}).Min;%linear final value term loaded into SOC(t=nS)
-                        QP.lb(nX(1:nSi)) = -EC(i);%change lb so that SOC = 0 coresponds to EC
-                        QP.ub(nX(1:nSi)) = StorSize - EC(i);%change ub so that SOC = 0 coresponds to EC
+%                         QP.lb(nX(1:nSi)) = -EC(i);%change lb so that SOC = 0 coresponds to EC
+%                         QP.ub(nX(1:nSi)) = StorSize - EC(i);%change ub so that SOC = 0 coresponds to EC
                         %need to find the inequality rows and adjust b term to account for this offset
                         r = Organize.Inequalities{i};
-                        QP.b(r(IneqLowBuff)) = -BuffSize + EC(i);%change lb so that SOC = 0 coresponds to EC (adding EC because there is a -1 in front of SOC in this inequality)
-                        QP.b(r(IneqHighBuff)) = StorSize-BuffSize - EC(i);%change lb so that SOC = 0 coresponds to EC
+%                         QP.b(r(IneqLowBuff)) = -BuffSize + EC(i);%change lb so that SOC = 0 coresponds to EC (adding EC because there is a -1 in front of SOC in this inequality)
+%                         QP.b(r(IneqHighBuff)) = StorSize-BuffSize - EC(i);%change lb so that SOC = 0 coresponds to EC
                         %need to change IC to IC-EC
-                        QP.beq(Organize.IC(i)) = IC(i)-EC(i);
+%                         QP.beq(Organize.IC(i)) = IC(i)-EC(i);
                     end
                 end
             else % dispatch optimization with final state & buffer states

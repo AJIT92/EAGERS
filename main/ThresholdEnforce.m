@@ -9,31 +9,34 @@ for s = 1:1:length(S)
     %% make decision based on cost and forecasted demand
     if nnz(OnOff~=Threshold.EnabledB)>0 %still in A configuration, test if change is needed
         [n,r] = size(Thresh.Range); % # of timesteps (n) and number of demand steps (r)
+        Time(end) = Time(end)+.0000001;%fix rounding error
         A = nnz(DateSim>Time)+1;
-        if Demand.(S{s})>Thresh.Range(A,end)
-            b = r;
-            disp('warning: Demand above +15% in thresholdEnforce')
-        elseif Demand.(S{s})<Thresh.Range(A,1)
-            b = 1;
-            disp('warning: Demand below -15% in thresholdEnforce')
-        else b = interp1(Thresh.Range(A,:),linspace(1,r,r),Demand.(S{s}));
-        end
-        if isnan(b)
-            disp('thresholdEnforce')
-        end
-        CostFit = (ceil(b)-b)*Thresh.Cost(:,floor(b))+(b-floor(b))*Thresh.Cost(:,ceil(b));
-        CostFit(isnan(CostFit)) = 0;
-        [~,I] = min(CostFit);
-
-        if I<=A && I<length(CostFit) %past optimal point to switch, and optimal is not at end
-            for k = 1:1:length(Thresh.Off)
-                if OnOff(Thresh.Off(k))==1
-                    TurnOff(end+1) = Thresh.Off(k);
-                end
+        if ~isinf(Thresh.Range(A,1))%make sure your range isn't infinite
+            if Demand.(S{s})>Thresh.Range(A,end)
+                b = r;
+                disp('warning: Demand above +15% in thresholdEnforce')
+            elseif Demand.(S{s})<Thresh.Range(A,1)
+                b = 1;
+                disp('warning: Demand below -15% in thresholdEnforce')
+            else b = interp1(Thresh.Range(A,:),linspace(1,r,r),Demand.(S{s}));
             end
-            for k = 1:1:length(Thresh.On)
-                if DateSim>=GenAvailTime(Thresh.On(k)) && OnOff(Thresh.On(k))==0
-                    TurnOn(end+1) = Thresh.On(k);
+            if isnan(b)
+                disp('thresholdEnforce')
+            end
+            CostFit = (ceil(b)-b)*Thresh.Cost(:,floor(b))+(b-floor(b))*Thresh.Cost(:,ceil(b));
+            CostFit(isnan(CostFit)) = 0;
+            [~,I] = min(CostFit);
+
+            if I<=A && I<length(CostFit) %past optimal point to switch, and optimal is not at end
+                for k = 1:1:length(Thresh.Off)
+                    if OnOff(Thresh.Off(k))==1
+                        TurnOff(end+1) = Thresh.Off(k);
+                    end
+                end
+                for k = 1:1:length(Thresh.On)
+                    if DateSim>=GenAvailTime(Thresh.On(k)) && OnOff(Thresh.On(k))==0
+                        TurnOn(end+1) = Thresh.On(k);
+                    end
                 end
             end
         end

@@ -81,7 +81,7 @@ while ~cheapest
     
         %% Rule 2 while 2nd dispatch corresponds to IC, extend until first time it needs to turn on (ramp rate to optimal setting the first time its on)   
         for i = 1:1:nG
-            if ~OnOff(i) && ~ismember(i,allutil)%if it is set off and is already off, lock it off for the initial condition
+            if ~OnOff(i) && ~ismember(i,allutil) && IC(i)==0%if it is set off and is already off, lock it off for the initial condition, don't lock off if there is an initial condition
                 Locked(1,i) = false;
 %             elseif ~OnOff(i) %if it is set off but is still ramping down, set it off at the soonest possible step
 %                 t_zeroOutput = sum((IC(1,i)./dXtotal(:,i))>=1) + 1;%the number of steps until the generator reaches 0 
@@ -108,7 +108,7 @@ while ~cheapest
         L2 = Locked;
         for j = 1:1:length(allGen)
             i = allGen(j);
-            L2(:,i) = (FirstDisp(:,i)>=LB(i))&L2(:,i);
+            L2(2:end,i) = (FirstDisp(2:end,i)>=LB(i))&L2(2:end,i);%don't change initial condition
         end
         % re-check for feasibiltiy
         [GenDisp,Cost,Feasible] = DispatchQP(QP,Organize,L2);
@@ -129,11 +129,14 @@ while ~cheapest
             %% Find when starts and stops occur in optimal dispatch
             i = allGen(j);
             starts = nonzeros(index.*(((SecondDisp(2:end,i)>0)-(SecondDisp(1:nS-1,i)>0))>0)); % if on at t = 3, start = 3, where IC is t=0
+            if ~OnOff(i)&& SecondDisp(1,i)>0
+                starts = [1;starts];
+            end
             stops = nonzeros(index.*(((SecondDisp(1:nS-1,i)>0)-(SecondDisp(2:end,i)>0))>0)); % if off at t = 12, stop = 12, where IC is t=0
-            if ~Locked(1,i)
+            if ~Locked(1,i) || ~OnOff(i)
                 %% Rule 3: turn off for longer time at start if possible
                 if~isempty(starts)
-                    p = 1;
+                    p = 0;
                     RampUp = dX(starts(1),i);
                     while RampUp<SecondDisp(starts(1)+1,i) && (starts(1)-p>0)
                         RampUp = RampUp+dX(starts(1)-p,i);
@@ -218,7 +221,7 @@ while ~cheapest
                 end
             end
             for k = 1:1:length(stops)
-                if sum(dX(starts(k):stops(k),i))>(UB(i) + LB(i)) || (stops(k)+1-starts(k))<floor(nS/4)%can only ramp to 1/2 power or less than 1/4 of horizon
+                if sum(dX(starts(k):stops(k),i))>(UB(i) + LB(i)) && sum(Locked(:,i))<floor(nS/4)%can only ramp to 1/2 power and less than 1/4 of horizon
                     L2 = Locked;
                     L2(starts(k):(stops(k)+1),i)= false;
                     [~,newCost,Feasible] = DispatchQP(QP,Organize,L2);
@@ -230,6 +233,30 @@ while ~cheapest
                 end
             end
             
+        end
+        %% prevent flicker
+        for j = 1:1:length(allGen)
+            i = allGen(j);
+            starts = nonzeros(index.*((Locked(2:end,i)-Locked(1:nS-1,i))>0));
+            stops = nonzeros(index.*((Locked(1:nS-1,i)-Locked(2:end,i))>0));
+            if ~isempty(starts) && ~isempty(stops)
+                stops = stops(stops<starts(end));
+            end
+            if ~isempty(stops) && ~isempty(stops)
+                starts = starts(starts>stops(1));
+                for k = 1:1:length(starts)
+                    if starts(k)==stops(k)+1 %if you are starting immediately after stopping
+                        L2 = Locked;
+                        L2(stops(k)+1,i) = true;
+                        [~,newCost,Feasible] = DispatchQP(QP,Organize,L2);
+                        newCost = newCost + sum(sum(L2.*OnCost)) - OnCost(2,i).*5*k;%OnCost(i).*4 is the cost of shutting down and back on
+                        if Feasible==1 && newCost<Cost
+                            Locked = L2;
+                            Cost = newCost;
+                        end
+                    end
+                end
+            end
         end
 %         %% Rule 7: If very close to LB for a few steps, try shutting off
 %         for j = 1:1:length(allGen)

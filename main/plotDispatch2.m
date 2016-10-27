@@ -37,7 +37,7 @@ for q = 1:1:length(S)
             stor(end+1) = i;
             StoragePower(:,end+1) = (GeneratorDispatch(1:end-1,i)-GeneratorDispatch(2:end,i))./dt;
             plotBars(:,end+1) = [0;max(0,StoragePower(:,end));];
-            negBars(:,end+1) = -[0;max(0,-StoragePower(:,end));];
+            negBars(:,end+1) = [0;-max(0,-StoragePower(:,end));];
             name(end+1) = cellstr(Plant.Generator(i).Name);
             nLegend(i) = length(plotBars(1,:));
 %             name(end+1) = {['Discharge ',Plant.Generator(i).Name]};
@@ -79,10 +79,10 @@ for q = 1:1:length(S)
 %         clf(fig+q-1)
         figure(fig+q-1)
         hold off
-        plotTime = sort([Time(1)-1,Time,Time-.0001,Time(end)+dt(end)-.0001]);%make sure that there is a step wise characteristic of the plot
-        posBars = zeros(length(plotBars(:,1))*2,length(plotBars(1,:)));
-        posBars(1:2:end) = plotBars;
-        posBars(2:2:end) = plotBars;
+        plotTime = sort([Time(1)-1,Time,Time-.9999]);%Time(end)+dt(end)-.0001]);%make sure that there is a step wise characteristic of the plot
+        posBars = zeros(length(plotBars(:,1))*2-1,length(plotBars(1,:)));
+        posBars(1:2:end,:) = plotBars;
+        posBars(2:2:end,:) = plotBars(2:end,:);
         h1 = area(plotTime,posBars,'Linestyle','none');
         if strcmp(S{q},'C')
             colormap cool
@@ -112,9 +112,9 @@ for q = 1:1:length(S)
         end
         negTicks = 0;
         if ~isempty(negBars)
-            negBarsPlot = zeros(length(negBars(:,1))*2,length(negBars(1,:)));
+            negBarsPlot = zeros(length(negBars(:,1))*2-1,length(negBars(1,:)));
             negBarsPlot(1:2:end) = negBars;
-            negBarsPlot(2:2:end) = negBars;
+            negBarsPlot(2:2:end) = negBars(2:end);
             h = area(plotTime,negBarsPlot,'Linestyle','none');%(2:end,:)'stacked','barwidth',1);
             negTicks = floor(min(min(negBars))/Yspace);
             if abs(negTicks)>3

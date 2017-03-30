@@ -6,47 +6,43 @@ function block = InitializeControlECstack(varargin)
 global F
 block = varargin{1};
 if length(varargin)==1 %first initialization
-    block.IC = [1 1]; % inital condition: OxidentTemp, oxidant flow rate, net current
-    block.Scale = block.IC;
     block.description = {'Oxidant Flow Rate';'Fuel Cell Current';};
     
     Target = zeros(length(block.Target),1);
     for j = 1:1:length(Target)
-        Target(j) = lookupVal(block.Target{j});
+        Target(j) = ComponentProperty(block.Target{j});
     end
     block.Target  = Target;
     
-    block.Cells = lookupVal(block.Cells);
-    block.Steam = lookupVal(block.Steam);
-    block.Utilization = lookupVal(block.Utilization);
-    block.SteamTemperature = lookupVal(block.SteamTemperature);
+    block.Cells = ComponentProperty(block.Cells);
+    block.Steam = ComponentProperty(block.Steam);
+    block.Utilization = ComponentProperty(block.Utilization);
+    block.SteamTemperature = ComponentProperty(block.SteamTemperature);
     
-    for j = 1:1:length(block.Scale)
-        block.Scale(j) = lookupVal(block.InitConditions{j});
-    end
-    Current = block.Scale(2);
+    OxFlow = NetFlow(ComponentProperty(block.InitConditions{1})); % inital condition: oxidant flow rate, 
+    Current = sum(ComponentProperty(block.InitConditions{2}));% net current
     
     SteamFlow = (block.Cells*abs(Current)/(2*F*block.Utilization*block.Steam.H2O)/1000);
     
-    if block.Scale(1)>0
+    if OxFlow>0
         block.HasFlow = true;
     else
         block.HasFlow = false;
     end
 
-    block.PortNames = {'Hot','Cold','PEN_Temp','Voltage','OxidantTemp','OxidantFlow','SteamTemp','SteamFlow','Current'};
+    block.PortNames = {'Hot','Cold','Voltage','PEN_Temp','OxidantTemp','OxidantFlow','SteamTemp','SteamFlow','Current'};
     block.Hot.type = 'in';
     block.Hot.IC = block.Target(1)+.5*block.Target(2); 
     block.Cold.type = 'in';
-    block.Cold.IC = block.Target(1)-.5*block.Target(2); 
-    block.PEN_Temp.type = 'in';
-    block.PEN_Temp.IC = block.Target(1);
+    block.Cold.IC = block.Target(1)-.5*block.Target(2);    
     block.Voltage.type = 'in';
     block.Voltage.IC = 1.3; 
+    block.PEN_Temp.type = 'in';
+    block.PEN_Temp.IC = block.Target(1);
     block.OxidantTemp.type = 'out';
     block.OxidantTemp.IC = block.Target(1);
     block.OxidantFlow.type = 'out';
-    block.OxidantFlow.IC = block.Scale(1); 
+    block.OxidantFlow.IC = OxFlow; 
     block.SteamTemp.type = 'out';
     block.SteamTemp.IC = block.SteamTemperature;
     block.SteamFlow.type = 'out';
@@ -56,6 +52,14 @@ if length(varargin)==1 %first initialization
     
     block.P_Difference = {};
     
+    
+    block.IC = 1; % inital condition
+    if block.HasFlow
+        block.Scale = [OxFlow;];
+    else 
+        block.Scale = [Current;];
+    end
+        
     for i = 1:1:length(block.PortNames)
         if length(block.connections)<i || isempty(block.connections{i})
             block.(block.PortNames{i}).connected={};
@@ -96,35 +100,11 @@ if length(varargin)==2 %% Have inlets connected, re-initialize
 
         newFlow = block.OxidantFlow.IC*(1+.5*TavgError);
         block.OxidantFlow.IC = newFlow;
-        block.Scale = [block.OxidantFlow.IC, block.Current.IC];
-        block.IC = [1-TavgError*block.PropGain(1),1-PowerError*block.PropGain(2)]; %Oxidant flow rate, net current
+        block.Scale = [block.OxidantFlow.IC];
+        block.IC = [1-TavgError*block.PropGain(1)]; %Oxidant flow rate
     else
         block.InitializeError = 0;
-        block.Scale = [block.SteamFlow.IC, block.Current.IC];
-        block.IC = [0,1-PowerError*block.PropGain(2)]; % inital condition with no anode flow in: OxidentTemp, oxidant flow rate, net current
+        block.Scale = [block.Current.IC];
+        block.IC = [1-PowerError*block.PropGain(2)]; % inital condition with no anode flow in: net current
     end
-end
-
-function const = lookupVal(initCond)
-global modelParam
-if ischar(initCond)
-    r = strfind(initCond,'.');
-    if ~isempty(r)
-        r = [r,length(initCond)+1];
-        A = modelParam.(initCond(1:r(1)-1));
-        for i = 2:1:length(r)
-            field = initCond(r(i-1)+1:r(i)-1);
-            A = A.(field);
-        end
-    else
-        A = modelParam.(initCond);
-    end
-    if isstruct(A) && isfield(A,'T')
-        const = NetFlow(A);
-    elseif length(A)>1
-        const  = sum(A);
-    else
-        const = A;
-    end
-else const  = initCond;
 end

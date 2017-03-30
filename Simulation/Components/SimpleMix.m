@@ -4,8 +4,6 @@ function Out = SimpleMix(t,Y, Inlet,block,string1)
 % Three (3) outlets: Pressure, Flow , and Temperature 
 % Two (2) states: Temperature and pressure
 global Ru Tags
-Y = Y.*block.Scale;
-  
 Pin =Y(end);
 NetOut.T = Y(1);
 inlets = fieldnames(Inlet);
@@ -35,6 +33,8 @@ if strcmp(string1,'Outlet')
     Out.Pin = Pin;
     Out.Outlet = NetOut;
     Out.Temperature = Out.Outlet.T;
+    Tags.(block.name).MassFlow = MassFlow(NetOut);
+    Tags.(block.name).Temperature = NetOut.T;
 elseif strcmp(string1,'dY')
     dY = 0*Y;
     Hin = sum(H);  
@@ -45,8 +45,6 @@ elseif strcmp(string1,'dY')
     dY(1) = (Hin-Hout)/(block.Vol*Cp*Pin).*NetOut.T*Ru;
     %pressure
     dY(end) = (NetFlow(NetIn) - NetFlow(NetOut))*Ru*Y(1)/(block.Vol);
-    Out = dY./block.Scale;
-    Tags.(block.name).MassFlow = MassFlow(NetOut);
-    Tags.(block.name).Temperature = NetOut.T;
+    Out = dY;
 end
 

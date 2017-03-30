@@ -14,9 +14,10 @@ for i = 1:1:nG
     s = Plant.Generator(i).OpMatB.states;
     if isfield(Plant.Generator(i).OpMatB,'constCost') %all of these cost terms need to be scaled later on       
         I(i) = Plant.Generator(i).OpMatB.(s{1}).ub;
-        if Dispatch(i)>I(i)
+        if isempty(Dispatch) || Dispatch(i)<=I(i)
+            marginCost(i) = Plant.Generator(i).OpMatB.(s{1}).f;
+        elseif Dispatch(i)>I(i)
             marginCost(i) = Plant.Generator(i).OpMatB.(s{2}).f + (Dispatch(i)-I(i))*Plant.Generator(i).OpMatB.(s{2}).H;
-        else marginCost(i) = Plant.Generator(i).OpMatB.(s{1}).f;
         end
     elseif isfield(Plant.Generator(i).OpMatB,'Stor')
         stor(end+1) = i;

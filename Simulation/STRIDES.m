@@ -92,7 +92,7 @@ end
 if J3 ~=4 
     %set up the transient
     Prompt = {'Time','Demand (% of Nominal)'};
-    DefaultVal = {'[0 24*3600]','[100 100]'};
+    DefaultVal = {'[0 4*3600 8*3600 24*3600]','[100 100 50 50]'};
     A= inputdlg(Prompt,'Specify the transient to test. Any string will be evaluated, but must create vertical vectors of equal length.',1,DefaultVal);
     SimSettings.PowerTime = eval(A{1});
     SimSettings.PowerDemand = eval(A{2})/100*modelParam.NominalPower;

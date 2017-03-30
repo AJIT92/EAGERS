@@ -4,7 +4,6 @@ function Out = Shaft(t,Y, Inlet,block,string1)
 % Two (2) outlets: RPM, Steady_Power
 % One (1) states: Shaft Speed
 global Tags
-Y = block.Scale.*Y;
 if strcmp(string1,'Outlet')
     Out.Steady_Power = Inlet.WTurbine - Inlet.WCompressor;
     Out.RPM = Y(1)*60/(2*pi);%Converts from Radians per Second to RPM
@@ -14,8 +13,5 @@ elseif strcmp(string1,'dY')
     ShaftPower = (Inlet.WTurbine - Inlet.WCompressor - Inlet.Gen_Power)*1000;%all units should be W
     Moment_Inertia = block.Density * block.Length * block.PMoI;%Moment of Inertia for the shaft
     dY(1) = ShaftPower/(Moment_Inertia*Y(1)); %dw/dt = P/(w*l) units of rad/s
-    Out = dY./block.Scale;
-    %if t > 1000
-        %disp(t);
-    %end
+    Out = dY;
 end

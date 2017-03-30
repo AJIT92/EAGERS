@@ -1,5 +1,7 @@
 function dY = RunBlocks(t,Y)
 global modelParam IterCount Inlet Outlet TagInf TagFinal Tags SimSettings WaitBar Jcount
+
+Y = Y.*modelParam.Scale;
 if ~isfield(Tags,'Options');
     Tags.Options = [];
 end
@@ -36,22 +38,11 @@ elseif IterCount>1 && t<TagInf.Time(IterCount)
     end
 end
 TagInf.Time(IterCount,1) = t;
-dY = 0*Y;
 
-list2 ={};
-list3 ={};
-for k = 1:1:length(list) %blocks without states 
-    if isempty(modelParam.(list{k}).IC)%blocks without states
-        list2(end+1,1) = list(k);
-    else
-        list3(end+1,1) = list(k);
-    end
-end
-blockList = [list2;list3;];
 OldInlet = [];%Inlet; %initial condition inlets
 %% Update pressure states & inlets
 for i = 1:1:length(modelParam.Pstates)
-    Pnew = Y(modelParam.Pstates(i))*modelParam.Scale(modelParam.Pstates(i));
+    Pnew = Y(modelParam.Pstates(i));
     if ~isempty(modelParam.Poutlets{i})
         block = modelParam.Poutlets{i}{1};
         port = modelParam.Poutlets{i}{2};
@@ -59,11 +50,11 @@ for i = 1:1:length(modelParam.Pstates)
     end
 end
 %% run blocks to find outlet conditions & connect inlets
-nComp = length(blockList);
+nComp = length(list);
 blockSteady = true(nComp,1);
 while any(blockSteady)
     for blockCount = 1:1:nComp 
-        block = blockList{blockCount};
+        block = list{blockCount};
         Inlet.(block) = RefreshInlet(block);
         if ~isfield(OldInlet,block)
             OldInlet.(block) = [];
@@ -74,12 +65,7 @@ while any(blockSteady)
                 Co = 'Controls';
             else Co = 'Components';
             end
-            string1 = 'Outlet';
-            if isempty(modelParam.(block).IC)%blocks without states
-                Outlet.(block) = feval(modelParam.(Co).(block).type,t,Inlet.(block),modelParam.(block));
-            else
-                Outlet.(block) = feval(modelParam.(Co).(block).type,t,Y(modelParam.(block).States),Inlet.(block),modelParam.(block),string1);
-            end
+            Outlet.(block) = feval(modelParam.(Co).(block).type,t,Y(modelParam.(block).States),Inlet.(block),modelParam.(block),'Outlet');
             blockSteady(blockCount) = true;
         else
             blockSteady(blockCount) = false;
@@ -88,16 +74,16 @@ while any(blockSteady)
 end
 
 %% run blocks to find dY
+dY = 0*Y;
 list = [CompNames;controls;];
- for k = 1:1:length(list) %run components with states %% record All tags
+for k = 1:1:length(list) %run components with states %% record All tags
     block = list{k};
     if nnz(strcmp(CompNames,block))>0
         Co = 'Components';
     else Co = 'Controls';
     end
-    string1 = 'dY';
     if ~isempty(modelParam.(block).IC)%blocks with states
-        dY(modelParam.(block).States) = feval(modelParam.(Co).(block).type,t,Y(modelParam.(block).States),Inlet.(block),modelParam.(block),string1);
+        dY(modelParam.(block).States) = feval(modelParam.(Co).(block).type,t,Y(modelParam.(block).States),Inlet.(block),modelParam.(block),'dY');
     end
     if isfield(modelParam.(block),'TagInf')
         tagNames = modelParam.(block).TagInf;
@@ -127,8 +113,9 @@ list = [CompNames;controls;];
             end
         end
     end
- end
- 
+end
+dY = dY./modelParam.Scale;
+
 if t>0 && WaitBar.Show == 1 && Jcount==length(Y) && isfield(modelParam,'Scope')
     n = length(modelParam.Scope);
     dt = TagInf.Time(IterCount,1) - TagInf.Time(IterCount-1,1);

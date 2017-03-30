@@ -1,149 +1,67 @@
-function GenOutput = StepByStepDispatch(Demand,scaleCost,dt,IC,limit,StorageProfile)
+function GenOutput = StepByStepDispatch(Demand,Renewable,scaleCost,dt,IC,limit,FirstProfile)
 % Time is the time from the current simulation time (DateSim), positive numbers are forward looking
-global Plant UB LB
+global Plant UB dX_dt 
 nG = length(Plant.Generator);
-[nS,~] = size(scaleCost);
-TestCombos = zeros(nS,1);
-
-
+if isempty(IC)
+    nS = 0;
+else
+    [nS,~] = size(scaleCost);
+end
+stor = find(Plant.OneStep.Organize.StorageEquality>0);
+StorPower = zeros(nS,nG);
+GenOutput = zeros(nS+1, nG);%nS should equal 1 in this case (finding IC)
 if ~isempty(IC)
-    GenOutput = zeros(nS+1, nG);
     GenOutput(1,:) = IC;
-else GenOutput = zeros(nS, nG);%nS should equal 1 in this case (finding IC)
 end
-
-if isempty(StorageProfile)
-    StorageProfile = UB;
-end
-
-%% note: do not need to account for self discharging of storage. This was added to demand when doing initial GenDisp, and now we are using the results of that
-Outs = Plant.optimoptions.Outputs;
-if nnz(strcmp('H',Outs))>0 && nnz(strcmp('E',Outs))>0
-    Outs = Outs(~(strcmp('H',Outs))); %combine heating optimization with electric due to CHP generators
-end
-if nnz(strcmp('C',Outs))>0 && nnz(strcmp('E',Outs))>0 && Plant.optimoptions.sequential == 0
-    Outs = Outs(~(strcmp('C',Outs))); %combine cooling optimization with electric 
-end
-for t = 1:1:nS %for every timestep
-    marginal = instantMarginalCost(StorageProfile(t,:),scaleCost(t,:));%update marginal cost
-    Organize = Plant.OneStep.Organize;%indices (rows and columns) associated with each generator, allowing generators to be removed later
-    EC = zeros(1,nG);
-    for s = 1:1:length(Outs);%for each demand (electrical/heating or chilling)
-        for v = 1:1:length(Demand)
-        QP = Plant.OneStep.(Outs{s})(t); % quadratic programing matrices (H, f, Aeq, beq, A, b, ub, lb)
-        QP = updateMatrices1Step(QP,scaleCost(t,:),marginal,IC,dt(t),Organize.(Outs{s}));
-        thisSeq = Organize.(Outs{s}).thisSeq;
-        stor = Organize.(Outs{s}).stor;
-%         storC = Organize.(Outs{s}).storC;
-%         storH = Organize.(Outs{s}).storH;
-        utility = Organize.(Outs{s}).utility;
-%         utilC = Organize.(Outs{s}).utilC;
-%         utilH = Organize.(Outs{s}).utilH;
-%         chill = Organize.(Outs{s}).chill;
-%         heater = Organize.(Outs{s}).heater;
-        allStor = [stor];%, storC, storH];
-        allGen = [thisSeq];%, chill, heater];
-        allUtility = [utility];%, utilC, utilH];
-        
-        mat = Organize.(Outs{s}).Demand{1};
-        index = Organize.(Outs{s}).Demand{2};
-        QP.(mat)(index) =Demand(v).(Outs{s})(t); %the first row of the equivalent matrix is the demand
-%DON'T HAVE HEATING SET UP
-%         if strcmp(Outs{s},'E') && isfield(Demand,'H')
-%             Heating.Demand = Demand.H(t);
-%             Heating.stor = storH;
-%             Heating.gen = heater;
-%             Heating.util = utilH;
-%             Heating.chp = Organize.(Outs{s}).CHPindex;
-%             Heating.Hratio = Organize.(Outs{s}).Hratio;
-%             Heating.Organize = Organize.('H');
-%             if ~Plant.optimoptions.excessHeat
-%                 QP.beq(Organize.H.Demand{2}) = Demand.H(t);
-%             else %if you can dump excess heat, then load the heat demand into the b matrix Ax<=b
-%                 QP.b(Organize.H.Demand{2}) = -Demand.H(t);
-%             end
-%         else Heating = [];
-%         end
-        Heating = [];
-        if strcmp(Outs{s},'E') && isfield(Demand,'C') && Plant.optimoptions.sequential == 0
-            Cooling.stor = storC;
-            Cooling.gen = chill;
-            Cooling.util = utilC;
-            Cooling.Organize = Organize.('C');
-            if Demand.C(t)>1 %ignore forecasting errors
-                Cooling.Demand = Demand.C(t);
-                QP.beq(Organize.C.Demand{2}) = Demand.C(t);
-            else Cooling.Demand = 0;
-            end
-        else Cooling = [];
-        end
-        MaxPower = zeros(1,nG);
-        MinPower = zeros(1,nG);
-        constCost = zeros(1,nG);
-        for j = 1:1:length(allUtility)
-            i = allUtility(j);
-            MaxPower(i) = UB(i); 
-            MinPower(i) = LB(i); 
-            outUtility = fieldnames(Plant.Generator(i).OpMatA.output);
-            n_states = Organize.(Outs{s}).States{i};
-            n_inf = isinf(QP.ub(n_states));
-            if nnz(n_inf)>0 %remove infinity bounds
-                QP.ub(n_states(n_inf>0)) = max(5*Demand(v).(outUtility{1})(t),5*sum(UB(~isinf(UB)))); %upper bound of utility is 5 times demand or sum of other generation
-            end
-            n_neg_inf = isinf(-QP.lb(n_states));
-            if nnz(n_inf)>0 %remove infinity bounds
-                QP.lb(n_states(n_neg_inf>0)) = min(-5*Demand(v).(outUtility{1})(t),-5*sum(UB(~isinf(UB)))); %upper bound of utility is 5 times demand or sum of other generation
-%                 MinPower(i) = QP.lb(n_states(1));
-            end
-        end
-        if strcmp(limit,'initially constrained')
-            IC(allStor) = StorageProfile(t,allStor); %refer to initial dispatch for SOC of storage to calculate marginal value
-        end
-        for j = 1:1:length(allGen)
-            i = allGen(j);
-            if Plant.Generator(i).Enabled ==0
-                thisSeq = thisSeq(thisSeq~=i);
-                chill = chill(chill~=i);
-                heater = heater(heater~=i);
-            else
-                if isempty(IC)
-                    MaxPower(i) = UB(i); 
-                    MinPower(i) = 0; 
-                else
-                    MaxPower(i) = min(UB(i),IC(i) + Plant.Generator(i).OpMatB.Ramp.b(1)*sum(dt(1:t)));
-                    MinPower(i) = max(0,IC(i) - Plant.Generator(i).OpMatB.Ramp.b(2)*sum(dt(1:t)));
-                end
-                if isfield(Plant.Generator(i).OpMatB,'constCost') %all of these cost terms need to be scaled later on
-                    constCost(i) = Plant.Generator(i).OpMatB.constCost.*scaleCost(t,i)*dt(t);
-                end
-            end
-        end
-        for j = 1:1:length(allStor)
-            i = allStor(j);
-            if isempty(IC)
-                MaxPower(i) = Plant.Generator(i).OpMatB.Ramp.b(2);
-                MinPower(i) = 0;%-Plant.Generator(i).OpMatB.Ramp.b(1); 
-            else
-                MaxPower(i) = min(IC(i)/dt(t),Plant.Generator(i).OpMatB.Ramp.b(2)); %minimum of peak discharge, and SOC/time (completely discharging storage in next step)
-                MinPower(i) = max(-(UB(i)-IC(i))/dt(t),-Plant.Generator(i).OpMatB.Ramp.b(1)); % maximum of peak charging and (UB - SOC)/dt (completely charging in next time step
-            end
-        end
-
-        [BestDispatch,TestCombos(t)] = eliminateCombinations(QP,Organize.(Outs{s}),Heating,Cooling,constCost,dt(t),IC,MaxPower,MinPower,thisSeq,stor,utility);%% combination elimination loop
-        if isempty(BestDispatch)
-            disp(['No feasible combination of generators at step' num2str(t)]);
-            BestDispatch = IC;
-            BestDispatch(allStor) = 0;
-            TestCombos(t)=0;
-        end
-        EC([allGen, allUtility])= BestDispatch([allGen, allUtility]);
-        if ~isempty(IC)
-            EC(allStor) = IC(allStor) - BestDispatch(allStor)*dt(t); %change in storage for this power output
-        end
-        end 
+TestCombos = zeros(nS,1); %how many QP optimizations needed to be run in eliminate combinations
+%note #1: IC of storage is already sclaed by discharge losses
+%% note #2:  need to account for self discharging of storage
+Outs = fieldnames(Demand);
+Outs = Outs(~strcmp(Outs,'T'));
+for t = 1:1:max(1,nS) %for every timestep
+    for j = 1:1:length(Outs)
+        Loads.(Outs{j}) = Demand.(Outs{j})(t,:); %update demand
+        netDemand.(Outs{j}) = sum(Loads.(Outs{j}));
     end
-    if strcmp(limit, 'constrained')%if its constrained but not initially constrained then make the last output the initial condition
-        IC = EC;
+    if isempty(FirstProfile) %finding initial conditions
+        QP = updateMatrices1Step(Plant.OneStep,Loads,Renewable,scaleCost(t,:),dt(t),[],[],[],[]);
+    else
+        if strcmp(limit, 'constrained')
+            MinPower = max(0,IC-dX_dt*dt(t));
+            MaxPower = min(UB,IC+dX_dt*dt(t));
+        else
+            MinPower = max(0,IC-dX_dt*sum(dt(1:t)));
+            MaxPower = min(UB,IC+dX_dt*sum(dt(1:t)));
+        end
+        StorPower(t,stor) = (FirstProfile(t,stor) - FirstProfile(t+1,stor))/dt(t);
+        StorPower(t,stor) = (IC(stor) - FirstProfile(t+1,stor))/dt(t); %expected output of storage in kW to reach the SOC from the 1st dispatch (penalties are always pushing it back on track if it needed more storage than expected somewhere)
+        QP = updateMatrices1Step(Plant.OneStep,Loads,Renewable(t,:),scaleCost(t,:),dt(t),FirstProfile(t,:),StorPower(t,:),MinPower,MaxPower);
+    end
+    [BestDispatch,TestCombos(t)] = eliminateCombinations(QP,netDemand);%% combination elimination loop
+    if isempty(BestDispatch)
+        disp(['No feasible combination of generators at step' num2str(t)]);
+        BestDispatch = IC;
+        BestDispatch(stor) = 0;
+        TestCombos(t)=0;
+    end
+    EC = BestDispatch;
+    if ~isempty(IC)
+        %if charging, subtract charging losses
+        dSOC = zeros(1,length(stor));
+        for i = 1:1:length(stor)
+            if (BestDispatch(stor(i))+StorPower(t,stor(i)))>0 %discharging
+                dSOC(i) = -(BestDispatch(stor(i))+StorPower(t,stor(i)))*dt(t);
+            else %charging
+                eff = Plant.Generator(stor(i)).OpMatA.Stor.DischEff*Plant.Generator(stor(i)).OpMatA.Stor.ChargeEff;
+                dSOC(i) = -(BestDispatch(stor(i))+StorPower(t,stor(i)))*dt(t)*eff; 
+            end
+        end
+        EC(stor) = IC(stor) + dSOC; %change in storage for this power output
+        if strcmp(limit, 'constrained')%if its constrained but not initially constrained then make the last output the initial condition
+            IC = EC;
+        else
+            IC(stor) = EC(stor); %update the state of storage
+        end
     end
     GenOutput(t+(~isempty(IC)),:) = EC;
 end

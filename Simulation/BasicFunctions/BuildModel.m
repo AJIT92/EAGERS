@@ -200,33 +200,18 @@ modelParam.IC = IC;
 CompNames = fieldnames(modelParam.Components);
 list = CompNames;
 OldInlet = Inlet; %initial condition inlets
-list2 ={};
-list3 ={};
-for k = 1:1:length(list) %blocks without states 
-    if isempty(modelParam.(list{k}).IC)%blocks without states
-        list2(end+1,1) = list(k);
-    else
-        list3(end+1,1) = list(k);
-    end
-end
-blockList = [list2;list3;];
 %%run blocks to find outlet conditions & connect inlets
-nComp = length(blockList);
+nComp = length(list);
 blockSteady = true(nComp,1);
 t = 0;
 Co = 'Components';
 while any(blockSteady)
     for blockCount = 1:1:nComp 
-        block = blockList{blockCount};
+        block = list{blockCount};
         Inlet.(block) = RefreshInlet(block);
         if HasInletChanged(Inlet.(block),OldInlet.(block))
             OldInlet.(block) = Inlet.(block); %next time only run if the inlets have changed from now.
-            string1 = 'Outlet';
-            if isempty(modelParam.(block).IC)%blocks without states
-                Outlet.(block) = feval(modelParam.(Co).(block).type,t,Inlet.(block),modelParam.(block));
-            else
-                Outlet.(block) = feval(modelParam.(Co).(block).type,t,IC(modelParam.(block).States),Inlet.(block),modelParam.(block),string1);
-            end
+            Outlet.(block) = feval(modelParam.(Co).(block).type,t,IC(modelParam.(block).States).*modelParam.Scale(modelParam.(block).States),Inlet.(block),modelParam.(block),'Outlet');
             blockSteady(blockCount) = true;
         else
             blockSteady(blockCount) = false;

@@ -70,10 +70,6 @@ files=dir(fullfile(Model_dir, 'Plant','*.mat'));
 list=strrep({files.name},'.mat','');
 set(handles.ProjectList,'string',list,'value',1)
 
-files = dir(fullfile(Model_dir, 'DesignProjects','*.mat'));
-list=strrep({files.name},'.mat','');
-set(handles.popupmenuProject,'string',list,'value',1)
-
 files = dir(fullfile(Model_dir, 'Model Library','*.mat'));
 list=strrep({files.name},'.mat','');
 set(handles.popupmenuSTRIDES,'string',list,'value',1)
@@ -97,14 +93,14 @@ function pushbuttonDesign_Callback(hObject, eventdata, handles)
 % hObject    handle to pushbuttonDesign (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
-global Model_dir Project
+global Model_dir Plant
 % Load file that was selected from the popupmenu
-projList = get(handles.popupmenuProject,'String');
-projName = projList{get(handles.popupmenuProject,'Value')};
-projFile = fullfile(Model_dir,'DesignProjects',projName);
-load(projFile);
+projList = get(handles.ProjectList,'String');
+projName = projList{get(handles.ProjectList,'Value')};
+load(fullfile(Model_dir,'Plant',projName));
 close
-run(fullfile(Model_dir,'GUI','Design','MainScreen1.m'))
+%run(fullfile(Model_dir,'GUI','Design','MainScreen1.m'))
+MainScreen1
 
 % --- Executes on button press in pushbuttonSTRIDES.
 function pushbuttonSTRIDES_Callback(hObject, eventdata, handles)
@@ -130,46 +126,24 @@ DG_BEAT
 
 % --- Executes on button press in Open.
 function Open_Callback(hObject, eventdata, handles)
-global Model_dir Plant HistProf Holidays RealTimeData
+global Model_dir Plant 
 list=get(handles.ProjectList,'string');
-val=get(handles.ProjectList,'value');
-plantSel=list{val};
-Plant = [];
-RealTimeData = [];
+plantSel = list{get(handles.ProjectList,'value')};
 load(fullfile(Model_dir,'Plant',plantSel))
-%% correct things missing from Plant Structure
-if ~isfield(Plant.optimoptions,'Buffer')
-    Plant.optimoptions.Buffer = 20; % percentage for buffer on storage
-end
-%% load other global variables
-if isfield(Plant.Data,'Holidays')
-    Holidays = Plant.Data.Holidays;
-else Holidays =[];
-end
-if isfield(Plant.Data,'HistProf')
-    HistProf = Plant.Data.HistProf;
-else HistProf =[];
-end
 close
-%%add colormaps
-h = figure(1);
-% temp = colormap(h5);
-Plant.Plotting.ColorNames = {'parula';'autumn';'cool';'spring';'summer';'winter';};
-for i = 1:1:length(Plant.Plotting.ColorNames)
-    colormap(h,Plant.Plotting.ColorNames{i});
-    Plant.Plotting.ColorMaps{i} = colormap(h);
-end
-close(h);
-
 %open new GUI
 DISPATCH
 
 % --- Executes on button press in NewProject.
 function NewProject_Callback(hObject, eventdata, handles)
+global Plant
 Name = char(inputdlg('Specify the project name','Project Name', 1,{'MicroGrid_01'}));
 hCreate = dialog('Visible','off');
-CreateNewProject(Name,hCreate)
-waitfor(hCreate)
+Plant = plant(Name);
+close
+MainScreen1
+% CreateNewProject(Name,hCreate)
+% waitfor(hCreate)
 
 
 % --- Executes on selection change in popupmenuProject.

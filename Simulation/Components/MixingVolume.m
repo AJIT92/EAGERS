@@ -4,8 +4,6 @@ function Out = MixingVolume(t,Y, Inlet,block,string1)
 % Three (3) outlets: Pressure, Flow , and Temperature 
 % Many (n+2) states: Temperature, any species under consideration, and pressure
 global Ru Tags 
-Y = Y.*block.Scale;
-
 Pin =Y(end);
 FlowOut = sum(max(0,Y(2:1+length(block.spec))));
 scaleFlow = (block.Pfactor*(Pin-Inlet.Pout))/FlowOut;%total flow out    
@@ -17,6 +15,8 @@ if strcmp(string1,'Outlet')
     Out.Pin = Pin;
     Out.Outlet = ActualOut;
     Out.Temperature = Out.Outlet.T;
+    Tags.(block.name).MassFlow = MassFlow(ActualOut)/scaleFlow;
+    Tags.(block.name).Temperature = Y(1);
 elseif strcmp(string1,'dY')
     dY = 0*Y;
     n = block.inlets;
@@ -48,7 +48,6 @@ elseif strcmp(string1,'dY')
     end
     %pressure
     dY(end) = (FlowIn - NetFlow(ActualOut))*Ru*Y(1)/(block.Vol);
-    Out = dY./block.Scale;
+    Out = dY;
 end
-Tags.(block.name).MassFlow = MassFlow(ActualOut)/scaleFlow;
-Tags.(block.name).Temperature = Y(1);
+

@@ -7,7 +7,7 @@ block = varargin{1};
 if length(varargin)==1 %first initialization
     block.Pdrop = 2; % presure drop across mixing volume (kPa)
     if ischar(block.SpeciesInit)
-        block.SpeciesInit = lookupVal(block.SpeciesInit);
+        block.SpeciesInit = ComponentProperty(block.SpeciesInit);
     end
     spec = fieldnames(block.SpeciesInit);
     spec = spec(~strcmp(spec,'T'));
@@ -122,22 +122,4 @@ elseif length(varargin)==2%% Have inlets connected, re-initialize
         end
     end
     block.Scale(end) = block.Pin.IC;
-end
-
-function A = lookupVal(initCond)
-global modelParam Tags
-r = strfind(initCond,'.');
-if ~isempty(r)
-    if strcmp(initCond(1:r(1)-1),'Tags')
-        A = Tags.(initCond(r(1)+1:r(2)-1)).(initCond(r(2)+1:end));
-    else
-        r = [r,length(initCond)+1];
-        A = modelParam.(initCond(1:r(1)-1));
-        for i = 2:1:length(r)
-            field = initCond(r(i-1)+1:r(i)-1);
-            A = A.(field);
-        end
-    end
-else
-    A = modelParam.(initCond);
 end

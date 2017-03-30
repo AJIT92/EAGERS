@@ -4,17 +4,27 @@ function Out = ControlSOFCsystem(t,Y, Inlet,block,string1)
 % Five (5) outlets:  Heater bypass, blower power, fuel flow rate, current, anode recirculation
 % Three (3) states: Heater bypass, blower power, Current 
 global Tags F
-NetPower = PowerDemandLookup(t);
-averageT = mean(Inlet.PEN_Temp);
-TavgError = (averageT - block.Target(1))/block.Target(2);
-deltaT = (mean(Inlet.Hot)-mean(Inlet.Cold));
-dTerror =(deltaT-block.Target(2))/block.Target(2);
-Current = (Y(3)+ block.PropGain(3))/(1+block.Scale(3)*Inlet.Voltage*block.Cells/(1000*NetPower)*block.PropGain(3))*block.Scale(3); 
-Power = Current*Inlet.Voltage*block.Cells/1000;
-PowerError = (NetPower - Power)/NetPower;
-FuelFlow = block.Cells*Current/(2*F*block.Utilization*(4*block.Fuel.CH4+block.Fuel.CO+block.Fuel.H2))/1000;
+I_Gain = block.Gain.*block.Scale;
+TinletError = ((mean(Inlet.Cold) + .5*block.Target(2) + block.dT_cath_PEN) - block.Target(1))/block.Target(2); %target a fixed inlet temperature
+ToutletError = ((mean(Inlet.Hot) - .5*block.Target(2) + block.dT_cath_PEN) - block.Target(1))/block.Target(2); %target a fixed outlet temperature
 
-Bypass = min(1,max(0,Y(1)+TavgError*block.PropGain(1)));
+
+% deltaT = (mean(Inlet.Hot)-mean(Inlet.Cold));
+% dTerror =(deltaT-block.Target(2))/block.Target(2); %target a fixed temperature gradient
+% BlowerPower = Y(2)+(dTerror*block.PropGain(2))*block.Scale(2);
+
+BlowerPower = Y(2)+(ToutletError*block.PropGain(2))*block.Scale(2);
+StackPower = PowerDemandLookup(t) + BlowerPower;
+% Current = Y(3)+block.PropGain(3)*(StackPower*1000/(Inlet.Voltage*block.Cells) - Y(3));
+% Power = Current*Inlet.Voltage*block.Cells/1000;
+% PowerError = (StackPower - Power)/StackPower;
+
+Current = StackPower*1000/(Inlet.Voltage*block.Cells);
+
+Bypass = min(1,max(0,Y(1)+TinletError*block.PropGain(1)));
+Utilization = min(block.Utilization,block.Utilization + .1*(Y(1)+TinletError*block.PropGain(1))); %lower utilization if additional pre-heating is necessary
+FuelFlow = block.Cells*Current/(2*F*Utilization*(4*block.Fuel.CH4+block.Fuel.CO+block.Fuel.H2))/1000;
+
 if block.AnodeRecirc.IC == 0
     Recirculation = 0;
 else
@@ -41,24 +51,30 @@ end
     
 if strcmp(string1,'Outlet')
     Out.HeaterBypass = Bypass;
-    Out.Blower = (Y(2)+dTerror*block.PropGain(2))*block.Scale(2);
+    Out.Blower = BlowerPower;
     Out.Current = Current;
     Out.AnodeRecirc = Recirculation;
     Out.FuelFlow = FuelFlow;
-elseif strcmp(string1,'dY')
-    dY = Y*0;
-    if (Bypass<=0 && TavgError<0) || (Bypass>=1 && TavgError>0)
-        dY(1) = 0; %saturation, anti-windup
-    else
-        dY(1) = block.Gain(1)*TavgError;
-    end
-    %% need to deterimine saturation on blower
-    dY(2) = block.Gain(2)*dTerror*block.Scale(2);
-    dY(3) = block.Gain(3)*PowerError*block.Scale(3);
-    Out = dY;
     Tags.(block.name).Bypass = Bypass;
-    Tags.(block.name).Blower = (Y(2)+dTerror*block.PropGain(2))*block.Scale(2);
+    Tags.(block.name).Blower = BlowerPower;
     Tags.(block.name).Recirculation = Recirculation;
     Tags.(block.name).FuelFlow = FuelFlow;
     Tags.(block.name).Current = Current;
+    Tags.(block.name).Utilization = Utilization;
+elseif strcmp(string1,'dY')
+    dY = Y*0;
+    if Y(1)+TinletError*block.PropGain(1) < 0 
+        dY(1) = 0.02*I_Gain(1)*TinletError; %controlling utilization
+    else
+        dY(1) = I_Gain(1)*TinletError;
+    end
+    %% need to deterimine saturation on blower
+    if Y(1) <0
+        dY(2) = 0;
+    else
+        dY(2) = I_Gain(2)*ToutletError;
+    end
+
+%     dY(3) = I_Gain(3)*PowerError;
+    Out = dY;  
 end

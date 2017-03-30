@@ -34,7 +34,7 @@ b = zeros(r,1);
 stateP = zeros(r,1);
 OutPort2 = {};
 for i = 1:1:r
-    if dMdP(i,1)~=0 %&& ~ischar(Pplus{i}) && ~ischar(Pminus{i}) %both Pin and Pout must be states to solve for mass flow
+    if nnz(dMdP(i,:))>0 %&& ~ischar(Pplus{i}) && ~ischar(Pminus{i}) %both Pin and Pout must be states to solve for mass flow
         a = dMdP(i,:); % equality constraint to get a mass flow
         b(i) = mFlow(i);
     else

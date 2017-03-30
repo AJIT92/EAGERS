@@ -12,14 +12,14 @@ deltaT = (mean(Inlet.Hot)-mean(Inlet.Cold));
 dTerror =(deltaT-block.Target(2))/block.Target(2);
     
 if isfield(block,'OxyFC')
-    Current = (Y(3)+ TavgError*block.PropGain(3))*block.Scale(3); % current controller for managing temperature in closed-end cathode FC (proportional control only)
-    % O2flow = block.Cells*Current/(4*F*1000)*32*3600*24/1000; %Ton/day
-    Parasitic = 0;%(1.0101*O2flow^-.202)*(O2flow*1000/24); %parasitic in kW
+    Current = Y(3)+ (TavgError*block.PropGain(3))*block.Scale(3); % current controller for managing temperature in closed-end cathode FC (proportional control only)
+    O2flow = block.Cells*Current/(4*F*1000)*32*3600*24/1000; %Ton/day
+    Parasitic = (1.0101*O2flow^-.202)*(O2flow*1000/24); %parasitic in kW
     Power = Current*Inlet.Voltage*block.Cells/1000;
-    PowerError = (NetPower - (Power - Parasitic))/NetPower;
+    PowerError = (NetPower + Parasitic - Power)/(NetPower + Parasitic);
     
-    FuelFlow = (Y(2)+PowerError*block.PropGain(2))*block.Scale(2);
-    CH4_Util = Y(3)*block.Scale(3)*block.Cells/(2000*F)/(FuelFlow*4*block.Fuel.CH4);%hydrogen used vs. ideal H2 available
+    FuelFlow = Y(2)+(PowerError*block.PropGain(2))*block.Scale(2);
+    CH4_Util = Y(3)*block.Cells/(2000*F)/(FuelFlow*4*block.Fuel.CH4);%hydrogen used vs. ideal H2 available
     R.CH4 = Current/(8000*F*CH4_Util);
     a = 4352.2./block.Target(1) - 3.99;
     R.WGS = R.CH4*exp(a)*block.WGSeffective;% Water gas shift equilibrium constant
@@ -37,9 +37,8 @@ if isfield(block,'OxyFC')
     BalancedVoltage = BalancedPower*1000/Current;
     VoltageError = Inlet.Voltage - BalancedVoltage;
 else
-    Current = (Y(3)+ block.PropGain(3))/(1+block.Scale(3)*Inlet.Voltage*block.Cells/(1000*NetPower)*block.PropGain(3))*block.Scale(3); 
+    Current = NetPower*1000/(Inlet.Voltage*block.Cells);
     Power = Current*Inlet.Voltage*block.Cells/1000;
-    PowerError = (NetPower - Power)/NetPower;
     FuelFlow = block.Cells*Current/(2*F*block.Utilization*(4*block.Fuel.CH4+block.Fuel.CO+block.Fuel.H2))/1000;
     if block.AnodeRecirc.IC == 0
         Recirculation = 0;
@@ -69,10 +68,10 @@ if strcmp(string1,'Outlet')
     if isfield(block,'OxyFC')
         Out.OxidantTemp = block.Target(1);
         Out.OxidantFlow = block.Cells*Current/(4000*F*block.Oxidant.O2); % kmol/s
-        Out.AnodeRecirc = Y(1)*block.Scale(1)+ dTerror*block.PropGain(1)*block.Target(2);
+        Out.AnodeRecirc = Y(1)+ dTerror*block.PropGain(1)*block.Target(2);
     else
-        Out.OxidantTemp = (Y(1)+TavgError*block.PropGain(1))*block.Scale(1);
-        Out.OxidantFlow = (Y(2)+dTerror*block.PropGain(2))*block.Scale(2);
+        Out.OxidantTemp = Y(1)+(TavgError*block.PropGain(1))*block.Scale(1);
+        Out.OxidantFlow = Y(2)+(dTerror*block.PropGain(2))*block.Scale(2);
         Out.AnodeRecirc =  Recirculation;
     end
     Out.FuelFlow = FuelFlow;
@@ -93,7 +92,6 @@ elseif strcmp(string1,'dY')
     else    
         dY(1) = block.Gain(1)*TavgError;
         dY(2) = block.Gain(2)*dTerror;
-        dY(3) = block.Gain(3)*PowerError;
     end
     Out = dY;
 end

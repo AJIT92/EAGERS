@@ -1,4 +1,5 @@
 %% build matrices for cQP
+global Plant
 Time = buildTimeVector(Plant.optimoptions);%% set up dt vector of time interval length
 Plant.OpMatA = buildMatrices('A',Time); %build quadratic programming matrices for FitA
 Plant.OpMatB = buildMatrices('B',Time);%build quadratic programming matrices for FitB

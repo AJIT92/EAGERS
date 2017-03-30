@@ -110,37 +110,40 @@ if length(varargin)==2 %% Have inlets connected, re-initialize
     
     %problem is to find speed and flow that matches the PR and power specified by input
     RPM = Tags.(block.name).RPM;
-    error = Inlet.Power;
+    
     nRPM = RPM/(block.RPMdesign*(Inlet.Temperature/block.Tdesign)^.5);%normalized RPM
-    Tol = (1e-3)*Inlet.Power;
-    while abs(error)>Tol
-        [Power,Flow,block] = OpPoint(nRPM,Inlet,block);
-        if block.RPM(end)<=nRPM
-            dRPM = -1e-5*nRPM;
-        else
-            dRPM = 1e-5*nRPM;
-        end
-        [Power2,~,~] = OpPoint(nRPM+dRPM,Inlet,block);
-        dPdRPM = (Power2-Power)/dRPM;
-        error = (Inlet.Power - Power);
-        if dPdRPM<0
-            dPdRPM = Inlet.Power*2;
-        end
-        
-        if block.RPM(end)<=nRPM && error>0
-            error = 0; %at edge of map, can't increase power anymore
-        elseif block.RPM(1)>=nRPM && error<0
-            error = 0; % at lower edge of map, can't decrease power
-        else
-            nRPM = max(min(nRPM + error/dPdRPM,block.RPM(end)),block.RPM(1));
-        end
-        
-    end
-    RPM = nRPM*(block.RPMdesign*(Inlet.Temperature/block.Tdesign)^.5);
+    [Power,Flow,block] = OpPoint(nRPM,Inlet,block);
+    block.NominalPower = Power;
+%     error = Inlet.Power;
+%     Tol = (1e-3)*Inlet.Power;
+%     while abs(error)>Tol
+%         [Power,Flow,block] = OpPoint(nRPM,Inlet,block);
+%         if block.RPM(end)<=nRPM
+%             dRPM = -1e-5*nRPM;
+%         else
+%             dRPM = 1e-5*nRPM;
+%         end
+%         [Power2,~,~] = OpPoint(nRPM+dRPM,Inlet,block);
+%         dPdRPM = (Power2-Power)/dRPM;
+%         error = (Inlet.Power - Power);
+%         if dPdRPM<0
+%             dPdRPM = Inlet.Power*2;
+%         end
+%         
+%         if block.RPM(end)<=nRPM && error>0
+%             error = 0; %at edge of map, can't increase power anymore
+%         elseif block.RPM(1)>=nRPM && error<0
+%             error = 0; % at lower edge of map, can't decrease power
+%         else
+%             nRPM = max(min(nRPM + error/dPdRPM,block.RPM(end)),block.RPM(1));
+%         end
+%         
+%     end
+%     RPM = nRPM*(block.RPMdesign*(Inlet.Temperature/block.Tdesign)^.5);
     
     FlowIn = Flow;
     FlowIn.T = Inlet.Temperature;
-    H2a = enthalpy(FlowIn)+Inlet.Power;
+    H2a = enthalpy(FlowIn)+block.NominalPower;
     Cp = SpecHeat(Flow);
     tC = (Cp*NetFlow(Flow));
     errorT =1;
@@ -186,9 +189,17 @@ if length(varargin)==2 %% Have inlets connected, re-initialize
     P2 = Inlet.Pin*((P2 -1)*(block.Pdesign -1) + 1);
     M1 = block.NflowGMap(i1,j11)*r+ block.NflowGMap(i2,j21)*(1-r);
     M2 = block.NflowGMap(i1,j12)*r+ block.NflowGMap(i2,j22)*(1-r);
-    block.dMdP(1,1) = Mscale*(M2 - M1)/(P2 - P1);
-    block.dMdP(1,2) =  (block.dMdP(1,1)*Inlet.Pout-block.mFlow)/Inlet.Pin;
-
+    if M1 == M2
+        if j12<length(block.NflowGMap(i1,:))
+            M2 = block.NflowGMap(i1,j12+1)*r+ block.NflowGMap(i2,j22+1)*(1-r);
+        else
+            M1 = block.NflowGMap(i1,j11-1)*r+ block.NflowGMap(i2,j21-1)*(1-r);
+        end
+    end
+    dMdP = Mscale*(M2 - M1)/(P2 - P1);
+    C =  (block.dMdP(1,1)*Inlet.Pout-block.mFlow)/Inlet.Pin;
+    block.dMdP = [dMdP, C]; 
+    
     Tags.(block.name).RPM = RPM;
     Tags.(block.name).Flow = Flow;
     Tags.(block.name).Power = Inlet.Power;

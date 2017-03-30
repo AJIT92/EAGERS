@@ -22,7 +22,7 @@ function varargout = MainScreen1(varargin)
 
 % Edit the above text to modify the response to help MainScreen1
 
-% Last Modified by GUIDE v2.5 19-Feb-2017 14:50:45
+% Last Modified by GUIDE v2.5 07-Mar-2017 17:30:26
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -60,51 +60,28 @@ guidata(hObject, handles);
 
 % UIWAIT makes MainScreen1 wait for user response (see UIRESUME)
 % uiwait(handles.figure1);
-global Project Series selectedComp Plant testSystems selectedSystem Model_dir
-
-Series = true;
-selectedComp = [];
+global Plant testSystems selectedSystem Model_dir SYSINDEX
+Plant.optimptions.method = 'Planning';
+if isfield(Plant.Generator,'OpMatA')
+    Plant.Generator = rmfield(Plant.Generator,'OpMatA');
+end
+if isfield(Plant.Generator,'OpMatB')
+    Plant.Generator = rmfield(Plant.Generator,'OpMatB');
+end
 testSystems = [];
 selectedSystem = 1;
-if strcmp(Project.Name, 'New Project')
-    Plant.Generator = [];
-    Plant.Generator.Name = [];
-    Plant.Generator.Type = [];
-    Plant.Generator.Output = [];
-    Plant.Generator.Source = [];
-    Plant.Generator.Size = [];
-    Plant.Generator.OpMatA = [];
-    Plant.Generator.OpMatB = [];
-    Plant.Generator.VariableStruct = [];
-    Plant.Generator.Enabled = [];
-else
-    Plant.Generator = [];
-    Plant.Generator(1).Name = Project.Utilities.Name;
-    Plant.Generator(1).Type = 'Utility';
-    Plant.Generator(1).Output.E = 1;
-    Plant.Generator(1).Source = 'E';
-    Plant.Generator(1).Size = inf;
-    Plant.Generator(1).OpMatA = [];
-    Plant.Generator(1).OpMatB = [];
-    Plant.Generator(1).VariableStruct = Project.Utilities.Grid;
-    Plant.Generator(1).Enabled = 1;
-    Plant.Generator(2) = Plant.Generator(1);
-    Plant.Generator(2).Output.E = [];
-    Plant.Generator(2).Source = 'NG';
-end
+SYSINDEX = 1;
 set(gcf,'Name','Energy Planning Tool 2017.0.1')
 popupmenuAxes_Callback(hObject, eventdata, handles)
 setupTabs(hObject, handles)
 setupSystemSpec(hObject, handles,1)
+updateSystemRep(hObject, eventdata, handles)
 
-files = dir(fullfile(Model_dir, 'DesignProjects','*.mat'));
+files = dir(fullfile(Model_dir, 'Plant','*.mat'));
 list=strrep({files.name},'.mat','');
-set(handles.popupmenuProjectMain,'string',list,'value',1)
-if ~isempty(Project)
-    set(handles.popupmenuProjectMain,'value',strmatch(Project.Name,list,'exact'))
-end
-
-
+set(handles.popupmenuProjectMain,'string',list)
+set(handles.popupmenuProjectMain,'value',strmatch(Plant.Name,list,'exact'))
+EditSystem(handles)
 
 % --- Outputs from this function are returned to the command line.
 function varargout = MainScreen1_OutputFcn(hObject, eventdata, handles) 
@@ -116,29 +93,9 @@ function varargout = MainScreen1_OutputFcn(hObject, eventdata, handles)
 % Get default command line output from handles structure
 varargout{1} = handles.output;
 
+
 % --- Executes on button press in saveProject.
 function saveProject_Callback(hObject, eventdata, handles)
-global Plant
-if ~isfield(Plant,'optimoptions')
-    Plant.optimoptions = [];
-end
-Plant.optimoptions.Buffer = 20;% percentage buffer on storage
-Plant.optimoptions.Interval = 1;
-Plant.optimoptions.Horizon = 24;
-Plant.optimoptions.Resolution = 1;
-Plant.optimoptions.Topt = 3600;
-Plant.optimoptions.Tmpc = 600;
-Plant.optimoptions.nsSmooth = 0;
-Plant.optimoptions.scaletime = 1;
-Plant.optimoptions.fastsimulation =1;
-Plant.optimoptions.tspacing = 'constant';
-Plant.optimoptions.sequential = 0;
-Plant.optimoptions.excessHeat = 1;
-Plant.optimoptions.Outputs = {};
-Plant.optimoptions.scaleTime = Plant.optimoptions.scaletime;
-Plant.optimoptions.thresholdSteps = 1;
-
-
 
 
 % --- Executes on selection change in popupmenuProjectMain.
@@ -146,7 +103,7 @@ function popupmenuProjectMain_Callback(hObject, eventdata, handles)
 % hObject    handle to popupmenuProjectMain (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
-global Model_dir Project
+global Model_dir
 % Load file that was selected from the popupmenu
 projList = get(handles.popupmenuProjectMain,'String');
 projName = projList{get(handles.popupmenuProjectMain,'Value')};
@@ -217,7 +174,8 @@ i = 1;
 while isempty(m) && isfield(handles,strcat('uipanelMain',num2str(i)))
     if strcmp(get(handles.(strcat('uipanelMain',num2str(i))),'Visible'),'on')
         m = i;
-    else i = i+1;
+    else
+        i = i+1;
     end
 end
 m = num2str(m);
@@ -239,8 +197,13 @@ set(handles.(strcat('MainTab',n)),'Position',[pos(1),pos(2),pos(3),pos(4)+.003])
 set(handles.(strcat('uipanelMain',m)),'Visible','off')
 set(handles.(strcat('uipanelMain',n)),'Visible','on')
 
+% % Set up System Spec component diagram
+% if n == '3'
+%     updateSystemRep(hObject, eventdata, handles)
+% end
 
-%% all functions for  tab 1
+
+%% Tab 1 functions
 
 % --- Executes on button press in System1.
 function System1_Callback(hObject, eventdata, handles)
@@ -264,6 +227,12 @@ function checkboxSys2_Callback(hObject, eventdata, handles)
 
 % --- Executes on button press in checkboxSys3.
 function checkboxSys3_Callback(hObject, eventdata, handles)
+
+
+% --- Executes on button press in pushbuttonEDC.
+function pushbuttonEDC_Callback(hObject, eventdata, handles)
+close
+DISPATCH
 
 % Sub-tabs callback
 function subTab_Callback(hObject, eventdata, handles)
@@ -304,10 +273,10 @@ function popupmenuAxes_Callback(hObject, eventdata, handles)
 % hObject    handle to popupmenuAxes (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
-global Project
+global Plant
 % Plot Electric Demand for now...
 % Default values 
-Ts = 8760/length(Project.Building(1).DemandE);
+Ts = 8760/length(Plant.Data.Demand.E);
 zoom = 1;
 startDate = 1;
 month = [0 31 28 31 30 31 30 31 31 30 31 30 31];
@@ -319,7 +288,7 @@ plotAxis = datenum([2014*ones(12,1) (1:12)' 1*ones(12,1) 0*ones(12,1) 0*ones(12,
 axes(handles.axesMain)
 xlabel('Date')
 X = datenum(2014,1,1,0,0,0)+((day1-1)+(Ts/24):(Ts/24):lastDay);
-Y = Project.Building(1).DemandE(1+24/Ts*(day1-1):24/Ts*lastDay);
+Y = Plant.Data.Demand.E(1+24/Ts*(day1-1):24/Ts*lastDay);
 plot(X,Y)
 ylabel('Demand (kW)')
 set(gca,'xtick',plotAxis)
@@ -332,7 +301,7 @@ if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgr
     set(hObject,'BackgroundColor','white');
 end
 
-%% functions for Cost-Spec sub-tab
+%% Sub-tab Cost Spec functions
 function CommitEdits_Callback(hObject, eventdata, handles)
 
 function editFixedCost_Callback(hObject, eventdata, handles)
@@ -391,8 +360,7 @@ if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgr
     set(hObject,'BackgroundColor','white');
 end
 
-%% Functions for the building Spec Sub Tab (call same functions as Building Spec Main Tab)
-
+%% Sub-tab Building Spec functions (call same functions as Building Spec Main Tab)
 function sliderArea2_Callback(hObject, eventdata, handles)
 
 function sliderArea2_CreateFcn(hObject, eventdata, handles)
@@ -439,7 +407,7 @@ function popupmenuLighting_Callback(hObject, eventdata, handles)
 
 function popupmenuLighting_CreateFcn(hObject, eventdata, handles)
 
-%% functions for System Spec sub-tab
+%% Sub-tab System Spec functions
 function sliderSize_Callback(hObject, eventdata, handles)
 
 function sliderSize_CreateFcn(hObject, eventdata, handles)
@@ -461,7 +429,7 @@ if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgr
     set(hObject,'BackgroundColor','white');
 end
 
-%% Functions for tab 2
+%% Tab 2 functions
 function popupmenuLocation_Callback(hObject, eventdata, handles)
 
 function popupmenuLocation_CreateFcn(hObject, eventdata, handles)
@@ -521,9 +489,9 @@ if isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColo
     set(hObject,'BackgroundColor',[.9 .9 .9]);
 end
 
-%% all functions for 3rd tab
+%% Tab 3 functions
 function setupSystemSpec(hObject, handles,sysnum)
-global Project Plant Model_dir
+global Plant Model_dir
 %set up the system spec tab
 %give the buttons symbols
 buttonIms = {'mGT', 'ICE', 'SOFC', 'MCFC', 'PEM', 'SolarPV', 'SolarThermal', 'Chiller', ...
@@ -547,7 +515,7 @@ function System3Comps_Callback(hObject, eventdata, handles)
 switchsys(3,handles)
 
 function switchsys(currentSys,handles)
-global selectedSystem Project
+global selectedSystem
 if get(handles.(strcat('System',num2str(currentSys),'Comps')),'Value')
     set(handles.(strcat('System',num2str(selectedSystem),'Comps')),'Value',0)
     offcolor = get(handles.(strcat('System',num2str(currentSys),'Comps')),'BackgroundColor');
@@ -557,50 +525,65 @@ if get(handles.(strcat('System',num2str(currentSys),'Comps')),'Value')
     setupSystemSpec([],handles,currentSys)
     selectedSystem = currentSys;
 end
-%% The following is the system representation (pushbuttons need to appear/disapear if they exist
-function pushbuttonCoolingDemands_Callback(hObject, eventdata, handles)
-
-function pushbuttonHotWaterDemand_Callback(hObject, eventdata, handles)
-
-function pushbuttonHeatingDemands_Callback(hObject, eventdata, handles)
-
-function pushbuttonGrid_Callback(hObject, eventdata, handles)
-
-function pushbuttonACDC_Callback(hObject, eventdata, handles)
-
-function pushbuttonFuelCell_Callback(hObject, eventdata, handles)
-
-function pushbuttonSolarPVInSys_Callback(hObject, eventdata, handles)
-
-function pushbuttonSolarSterlingInSys_Callback(hObject, eventdata, handles)
-
-function pushbuttonHeaterInSys_Callback(hObject, eventdata, handles)
-
-function pushbuttonChillerInSys_Callback(hObject, eventdata, handles)
-
-function pushbuttonWaterHeatInSys_Callback(hObject, eventdata, handles)
 
 function pushbuttonAbChillerInSys_Callback(hObject, eventdata, handles)
+SetupSystem(hObject,handles)
 
-function pushbuttonTES1_Callback(hObject, eventdata, handles)
-
-function pushbuttonTES3_Callback(hObject, eventdata, handles)
-
-function pushbuttonTES2_Callback(hObject, eventdata, handles)
+function pushbuttonACDC_Callback(hObject, eventdata, handles)
+SetupSystem(hObject,handles)
 
 function pushbuttonBatteryInSys_Callback(hObject, eventdata, handles)
+SetupSystem(hObject,handles)
+
+function pushbuttonChillerInSys_Callback(hObject, eventdata, handles)
+SetupSystem(hObject,handles)
+
+function pushbuttonCoolingDemands_Callback(hObject, eventdata, handles)
+SetupSystem(hObject,handles)
+
+function pushbuttonFuelCell_Callback(hObject, eventdata, handles)
+SetupSystem(hObject,handles)
+
+function pushbuttonGrid_Callback(hObject, eventdata, handles)
+SetupSystem(hObject,handles)
+
+function pushbuttonHeaterInSys_Callback(hObject, eventdata, handles)
+SetupSystem(hObject,handles)
+
+function pushbuttonHeatingDemands_Callback(hObject, eventdata, handles)
+SetupSystem(hObject,handles)
+
+function pushbuttonHotWaterDemands_Callback(hObject, eventdata, handles)
+SetupSystem(hObject,handles)
 
 function pushbuttonICE_mGT_Callback(hObject, eventdata, handles)
+SetupSystem(hObject,handles)
 
-function pushbuttonSolarThermInSys_Callback(hObject, eventdata, handles)
+function pushbuttonSolarPVInSys_Callback(hObject, eventdata, handles)
+SetupSystem(hObject,handles)
+
+function pushbuttonSolarSterlingInSys_Callback(hObject, eventdata, handles)
+SetupSystem(hObject,handles)
+
+function pushbuttonSolarThermalInSys_Callback(hObject, eventdata, handles)
+SetupSystem(hObject,handles)
+
+function pushbuttonTES1_Callback(hObject, eventdata, handles)
+SetupSystem(hObject,handles)
+
+function pushbuttonTES2_Callback(hObject, eventdata, handles)
+SetupSystem(hObject,handles)
+
+function pushbuttonTES3_Callback(hObject, eventdata, handles)
+SetupSystem(hObject,handles)
+
+function pushbuttonWaterHeaterInSys_Callback(hObject, eventdata, handles)
+SetupSystem(hObject,handles)
 
 function pushbuttonWindInSys_Callback(hObject, eventdata, handles)
+SetupSystem(hObject,handles)
 
-function Wind_Callback(hObject, eventdata, handles)
-
-
-%% the following need to represent different things for each system selected in 3rd tab
-
+%% The following need to represent different things for each system selected in 3rd tab
 function CompName_Callback(hObject, eventdata, handles)
 global Plant
 plantindex = get(hObject,'Userdata');
@@ -656,71 +639,91 @@ if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgr
 end
 
 function saveSystem_Callback(hObject, eventdata, handles)
-global selectedSystem Plant estSystems
+global selectedSystem Plant testSystems
 testSystems(selectedSystem).Plant = Plant;
 
-%% The following is for the library on tab 3
+%% Library (Tab 3) callbacks
 function selectComponent(hObject,selected, handles)
 %%Give user option to load system of this type from library
 %%and add to or replace in system configuration, or to edit one 
 %%then add or replace
-global Plant
 
-% --- Executes on button press in CustomCHP.
-function CustomCHP_Callback(hObject, eventdata, handles)
-selectComponent(hObject,'pushbuttonCustEng',handles);
+% --- Executes on Micro Turbine button press.
+function mGT_Callback(hObject, eventdata, handles)
+AddSystem(hObject,handles)
 
 function ICE_Callback(hObject, eventdata, handles)
-selectComponent(hObject,'pushbuttonICE',handles);
+AddSystem(hObject,handles)
 
-function mGT_Callback(hObject, eventdata, handles)
-selectComponent(hObject,'pushbuttonGT',handles);
-
-function MCFC_Callback(hObject, eventdata, handles)
-selectComponent(hObject,'pushbuttonMCFC',handles);
+function CustomCHP_Callback(hObject, eventdata, handles)
+AddSystem(hObject,handles)
 
 function SOFC_Callback(hObject, eventdata, handles)
-selectComponent(hObject,'pushbuttonSOFC',handles);
+AddSystem(hObject,handles)
+
+function MCFC_Callback(hObject, eventdata, handles)
+AddSystem(hObject,handles)
 
 function PEM_Callback(hObject, eventdata, handles)
-selectComponent(hObject,'pushbuttonPEM',handles);
+AddSystem(hObject,handles)
 
 function CustomFC_Callback(hObject, eventdata, handles)
-selectComponent(hObject,'pushbuttonCustFC',handles);
-
-function SolarThermal_Callback(hObject, eventdata, handles)
-selectComponent(hObject,'pushbuttonSTherm',handles);
+AddSystem(hObject,handles)
 
 function SolarPV_Callback(hObject, eventdata, handles)
-selectComponent(hObject,'pushbuttonPV',handles);
+AddSystem(hObject,handles)
+
+function SolarThermal_Callback(hObject, eventdata, handles)
+AddSystem(hObject,handles)
 
 function SolarStirling_Callback(hObject, eventdata, handles)
-selectComponent(hObject,'pushbuttonCustSolar',handles);
+AddSystem(hObject,handles)
 
-function AirHeater_Callback(hObject, eventdata, handles)
-selectComponent(hObject,'pushbuttonHeat',handles);
+function Wind_Callback(hObject, eventdata, handles)
+AddSystem(hObject,handles)
 
 function Chiller_Callback(hObject, eventdata, handles)
-selectComponent(hObject,'pushbuttonChill',handles);
-
-function WaterHeater_Callback(hObject, eventdata, handles)
-selectComponent(hObject,'pushbuttonBoil',handles);
+AddSystem(hObject,handles)
 
 function AbChiller_Callback(hObject, eventdata, handles)
-selectComponent(hObject,'pushbuttonCustTherm',handles);
+AddSystem(hObject,handles)
 
-function HighTempStor_Callback(hObject, eventdata, handles)
-selectComponent(hObject,'pushbuttonHStor',handles);
+function AirHeater_Callback(hObject, eventdata, handles)
+AddSystem(hObject,handles)
+
+function WaterHeater_Callback(hObject, eventdata, handles)
+AddSystem(hObject,handles)
 
 function ColdStor_Callback(hObject, eventdata, handles)
-selectComponent(hObject,'pushbuttonCStor',handles);
+AddSystem(hObject,handles)
+
+function HighTempStor_Callback(hObject, eventdata, handles)
+AddSystem(hObject,handles)
 
 function HotStor_Callback(hObject, eventdata, handles)
-selectComponent(hObject,'pushbuttonEStor',handles);
+AddSystem(hObject,handles)
 
-function Battery_Callback(hObject, eventdata, handles)
-selectComponent(hObject,'pushbuttonCustStor',handles);
+function ElecStor_Callback(hObject, eventdata, handles)
+AddSystem(hObject,handles)
 
+% --- Executes on button press in pushbuttonRemove.
+function pushbuttonRemove_Callback(hObject, eventdata, handles)
+global Plant SYSINDEX
+nG = length(Plant.Generator);
+str = strcat(Plant.Generator(SYSINDEX).Type,'.',Plant.Generator(SYSINDEX).Name);
+for n = 1:1:length(Plant.Network)
+    Plant.Network(n).Equipment = Plant.Network(n).Equipment(~strcmp(str,Plant.Network(n).Equipment));
+end
+if SYSINDEX ==1
+    Plant.Generator = Plant.Generator(2:end);
+elseif SYSINDEX == nG
+    Plant.Generator = Plant.Generator(1:end-1);
+else
+    Plant.Generator = [Plant.Generator(1:SYSINDEX-1),Plant.Generator(SYSINDEX+1:end)];
+end
+SYSINDEX = 1;
+updateSystemRep(hObject, eventdata, handles)
+EditSystem(handles)
 
 % --- Executes on selection change in Compfuel.
 function Compfuel_Callback(hObject, eventdata, handles)
@@ -735,7 +738,7 @@ if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgr
     set(hObject,'BackgroundColor','white');
 end
 
-%% Functions for tab 4
+%% Tab 4 functions
 function popupmenuOptimization_Callback(hObject, eventdata, handles)
 
 function popupmenuOptimization_CreateFcn(hObject, eventdata, handles)
@@ -767,6 +770,7 @@ if get(handles.AutoAncilOpt,'Value')
 else
     set(handles.ManualAncilOpt,'Value',1)
 end
+
 function ManualAncilOpt_Callback(hObject, eventdata, handles)
 if get(handles.ManualAncilOpt,'Value')
     set(handles.AutoAncilOpt,'Value',0)
@@ -775,7 +779,7 @@ else
 end
 
 
- %% need to automatically creat these control menues for all dispatchable generators
+%% Need to automatically creat these control menus for all dispatchable generators
 function popupmenuSys1_Callback(hObject, eventdata, handles)
 
 % --- Executes during object creation, after setting all properties.

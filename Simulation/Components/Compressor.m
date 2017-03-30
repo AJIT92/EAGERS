@@ -3,7 +3,6 @@ function Out = Compressor(t,Y, Inlet,block,string1)
 % Two (2) outlets: Flow, Work input required
 % Two (2) states: Tgas out and Twall
 global Ru Tags
-Y = Y.*block.Scale;
 NetFlowIn = NetFlow(Inlet.FlowIn);
 Mmass = MassFlow(Inlet.FlowIn)/NetFlowIn;
 %compressor map
@@ -80,5 +79,5 @@ elseif strcmp(string1,'dY')
     [~, Hout] = enthalpy(FlowOut);
     dY(1) = (H2a-Hout)*Ru*Y(1)/(Inlet.Pout*block.Volume*Cp); %dT = dQ / n Cp
     dY(2) = (Q_FlowWallC - Q_WallAmbC - Q_WallAmbR)/(block.Mass*block.SpecHeat);
-    Out = dY./block.Scale;
+    Out = dY;
 end

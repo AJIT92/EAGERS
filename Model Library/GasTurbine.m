@@ -47,7 +47,7 @@ Plant.Components.Shaft.TagInf = {'RPM';};
 
 Plant.Components.HX1.type = 'HeatExchanger';
 Plant.Components.HX1.name = 'HX1';
-Plant.Components.HX1.direction = 2;  % parallel =1, countercurrent =2, crossflow =3
+Plant.Components.HX1.direction = 'counterflow'; % 'coflow', or 'counterflow' or 'crossflow'
 Plant.Components.HX1.columns = 5;
 Plant.Components.HX1.rows =1;
 Plant.Components.HX1.sizemethod = 'Effectiveness'; %method for sizing HX to initial conditions. Options are: 'fixed' fixed size heat exchanger during intialization, 'ColdT' sizes to match cold exit temp, 'HotT' sizes to match hot ext temp, 'Effectiveness' sizes to match a target effectiveness: % of ideal (infinite area) heat transfer (with no conduction between nodes)

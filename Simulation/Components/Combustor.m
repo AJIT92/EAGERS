@@ -6,7 +6,6 @@ function Out = Combustor(t,Y, Inlet,block,string1)
 % Three (3) outlets: Bypass flow, core flow and pressure at the inlet
 % Six (6) states: Tcombustor, Tbypass, Twall, Tcasing, Inlet Pressure
 global Ru Tags
-Y = Y.*block.Scale;
 Bypass = Y(5);
 Pin = Y(6);
 NetOut = block.Pfactor*(Pin-Inlet.Pout);%total cold flow out
@@ -125,5 +124,5 @@ elseif strcmp(string1,'dY')
     else
         dY(6) = (NetFlow(CombustMix)+NetFlow(BypassFlow)-NetOut)*Ru*Y(1)/(block.Vol);
     end
-    Out = dY./block.Scale;
+    Out = dY;
 end

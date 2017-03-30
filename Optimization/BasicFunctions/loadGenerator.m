@@ -1,20 +1,15 @@
 function loadGenerator% Loads generators for economic dispatch
 %% this function identifies the values that will be used to represent each generator in the quadratic optimizations
-global Plant UB LB dischEff MinThresh chargeEff selfDisch
+global Plant UB LB dX_dt MinThresh 
 %UB: the upper limit (capacity) of each generator
 %LB: the lower limit (capacity) of each generator when on
-%dischEff: Discharge efficiency of energy storage
-%chargeEff: charge efficiency of energy storage
 %selfDisch: the amount of self dicharging per hour for a storage system
 %MinThresh: a minimum buying constraint which may exist for some utilities
 
 nG = length(Plant.Generator);
-dischEff = [];
-chargeEff = [];
 MinThresh = [];
 LB = zeros(1,nG);
 UB = zeros(1,nG);
-selfDisch = zeros(1,nG);
 dX_dt = zeros(1,nG);
 Plant.optimoptions.Outputs = {};
 for i = 1:1:nG
@@ -37,19 +32,12 @@ for i = 1:1:nG
             end
         end
     end
-    if isfield(Plant.Generator(i).OpMatA,'Stor')
-        dischEff(i) = Plant.Generator(i).OpMatA.Stor.DischEff;
-        chargeEff(i) = Plant.Generator(i).OpMatA.Stor.ChargeEff;
-        selfDisch(i) = Plant.Generator(i).OpMatA.Stor.SelfDischarge;
-    end
 end 
 %need to wait until everything else has been loaded to load the buffer,
 %because it is reliant on how quickly everything else can charge the system
 findbuffer
 
 agregateSSmodel(SSi)
-
-setupOptimization %refers to the function of this name in whichever optimization is selected
 
 
 function [OpMatA, OpMatB, LB, UB, dX_dt,SSi] = loadUtility(Gen)
@@ -343,7 +331,7 @@ UB = Stor.UsableSize;
 dX_dt = Stor.PeakDisch;% storage discharge constraint in kW
 if length(Outs)==2 %HVAC system
     OpMatA.states = {'X'; 'Y'}; %state of charge, charging power, no buffers
-    OpMatA.link.ineq = [1 -1/(1-(HS.ChargeEff*HS.DischEff))]; %SOC(t-1) - SOC(t) -charging <0 ------ Charging is the 1/inefficiency + 1
+    OpMatA.link.ineq = [1 -1/(1-(HS.ChargeEff*HS.DischEff))]; % -SOC(t-1) + SOC(t) -charging <0 ------ Charging is the 1/inefficiency + 1
     OpMatA.link.bineq = 0;
     OpMatA.xL = '2*nS+1';% 2 states + IC
     OpMatA.req = '1';%one line for the IC
@@ -363,7 +351,7 @@ if length(Outs)==2 %HVAC system
 elseif Stor.ChargeEff*Stor.DischEff>=1 %ideal storage, ignore charging state
     OpMatA.states = {'X';'Z';'W'};%SOC(t+1), charging power, upper buffer, lower buffer
     OpMatA.link.ineq = [-1 0 -1; 1 -1 0];%-SOC(t)-lowerbuffer<-0.2  and %SOC-upperbuffer<0.8
-    OpMatA.link.bineq = [0;0;];
+    OpMatA.link.bineq = [0;0;]; %% note: the magnitude of the buffer is set later in findBuffer
     OpMatA.xL = '3*nS+1';% 3 states + IC
     OpMatA.req = '1';%1 for the IC 
     OpMatA.r = '4*nS'; %ramp inequality & link inequalities
@@ -378,12 +366,12 @@ elseif Stor.ChargeEff*Stor.DischEff>=1 %ideal storage, ignore charging state
     OpMatA.Ramp.b = [Stor.PeakCharge; Stor.PeakDisch];
 
     OpMatA.Z.lb = 0;
-    OpMatA.Z.ub = 0;
+    OpMatA.Z.ub = 0;%% note: the magnitude of the buffer is set later in findBuffer
     OpMatA.Z.H = 0;
     OpMatA.Z.f = 0;
 
     OpMatA.W.lb = 0;
-    OpMatA.W.ub = 0;
+    OpMatA.W.ub = 0;%% note: the magnitude of the buffer is set later in findBuffer
     OpMatA.W.H = 0;
     OpMatA.W.f = 0;
 else % include charging state

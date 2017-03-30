@@ -25,13 +25,27 @@ for k = 1:1:n
         end
     end
     CH4max = min(Inlet.CH4,Inlet.H2O);
-    CH4min = -min(Inlet.CO,((Inlet.H2 + Inlet.CO - H2consume(k))/3)*3/4);
+    CH4min = -min(Inlet.CO,Inlet.H2);
     Span1 = CH4max-CH4min;
     if ~isempty(guess)
-        Xin = ((-CH4min)/Span1)/PercEquilib;
         x0 = guess(k);
-        Tol = max(1e-10,abs(x0-Xin)*1e-7);
-        y0 = Newton1D(Inlet,(Span1*x0+CH4min),H2consume(k),Type,T(k),P,g0,XnP,Tol);
+        R.CH4(k,1) = (Span1*x0+CH4min);
+        
+        X.CH4 = InFlow.CH4(k) - R.CH4(k);
+        X.CO = InFlow.CO(k) + R.CH4(k);
+        X.CO2 = InFlow.CO2(k);
+        X.H2 = InFlow.H2(k) + 3*R.CH4(k) - H2consume(k);%hydrogen consumed
+        X.H2O = InFlow.H2O(k) - R.CH4(k) + H2consume(k);% water produced
+        if strcmp(Type,'MCFC')
+            X.CO2 = X.CO2 + H2consume(k); % CO2 brought over
+        end
+        for i = 1:1:length(spec)
+            if ~ismember(spec{i},specInterest)
+                X.(spec{i}) = InFlow.(spec{i})(k);
+            end
+        end
+        y0 = Newton1D(.5,X,-min(X.CO2,X.H2),min(X.H2O,X.CO(k)),T(k),P,specInterest,1e-6,'GibbVal');
+        Tol = max(1e-10,x0*1e-7);
     else
         Tol = 1e-6;
         x0 = 0.85;
@@ -40,10 +54,24 @@ for k = 1:1:n
 
     [x,y] = Newton2D(Inlet,CH4min,CH4max,H2consume(k),Type,T(k),P,g0,XnP,x0,y0,Tol);
     R.CH4(k,1) = max(CH4min,PercEquilib*(Span1*x+CH4min)); %prevents a low % equilibrium from causing problems with enough H2 for electrochemistry
-    R_COmin = -min(Inlet.CO2,Inlet.H2 + 3*R.CH4(k,1) - H2consume(k));
-    R_COmax = min((Inlet.H2O-R.CH4(k,1)),(Inlet.CO+R.CH4(k,1)));
+    
+    X.CH4 = InFlow.CH4(k) - R.CH4(k);
+    X.CO = InFlow.CO(k) + R.CH4(k);
+    X.CO2 = InFlow.CO2(k);
+    X.H2 = InFlow.H2(k) + 3*R.CH4(k) - H2consume(k);%hydrogen consumed
+    X.H2O = InFlow.H2O(k) - R.CH4(k) + H2consume(k);% water produced
+    if strcmp(Type,'MCFC')
+        X.CO2 = X.CO2 + H2consume(k); % CO2 brought over
+    end
+    for i = 1:1:length(spec)
+        if ~ismember(spec{i},specInterest)
+            X.(spec{i}) = InFlow.(spec{i})(k);
+        end
+    end
+    R_COmin = -min(X.CO2,X.H2);
+    R_COmax = min(X.H2O,X.CO(k));
     if PercEquilib<1
-        y = Newton1D(Inlet,R.CH4(k,1),H2consume(k),Type,T(k),P,g0,XnP,Tol);
+        y = Newton1D(y0,X,R_COmin,R_COmax ,T(k),P,specInterest,1e-6,'GibbVal');
     end
     R.WGS(k,1) = y*R_COmax + (1-y)*R_COmin;
     OutFlow = FlowsOut(Inlet,R.CH4(k,1),R.WGS(k,1),H2consume(k),Type);
@@ -62,6 +90,13 @@ X.H2 = Inlet.H2 + 3* CH4 + WGS - H2consume;%hydrogen consumed
 X.H2O = Inlet.H2O - CH4 - WGS + H2consume;% water produced
 if strcmp(Type,'MCFC')
     X.CO2 = X.CO2 + H2consume; % CO2 brought over
+end
+spec = fieldnames(Inlet);
+specInterest = {'CH4','CO','CO2','H2','H2O'};
+for i = 1:1:length(spec)
+    if ~ismember(spec{i},specInterest)
+        X.(spec{i}) = Inlet.(spec{i});
+    end
 end
 
 function [x0,y0] = Newton2D(Inlet,R_CH4min,R_CH4max,H2consume,Type,T,P,g0,XnP,x0,y0,Tol)
@@ -136,42 +171,6 @@ while error>Tol && count<15
     end
     count = count+1;
 end
-
-function y0 = Newton1D(Inlet,CH4,H2consume,Type,T,P,g0,XnP,Tol)
-y0 = 0.5;
-error = max(10*Tol,1e-6);
-count = 0;
-while error>Tol && count<12
-    e_y = max(.001*error,1e-6);
-    if y0+2*e_y>=1
-        e_y = -.1*abs(e_y);
-    end
-    G11 = GibbVal2(CH4,y0,Inlet,[],[],H2consume,Type,T,P,g0,XnP);
-    a = abs(G11);
-    G12 = GibbVal2(CH4,y0+e_y,Inlet,[],[],H2consume,Type,T,P,g0,XnP)/a;
-    G13 = GibbVal2(CH4,y0-e_y,Inlet,[],[],H2consume,Type,T,P,g0,XnP)/a;
-    G11 = G11/a;
-    
-    dGdy1 = (G12-G11)/e_y;
-    dGdy2 = (G11-G13)/e_y;
-    dGdydy = (dGdy1-dGdy2)/e_y;
-    if dGdydy==0
-        dY =0;
-    else
-        dY = -dGdy1/dGdydy;
-    end
-    b = y0 + dY;
-    if b>1
-        scale = .75*(1-y0)/dY; %take a smaller step if iteration takes it beyond 0 or 1
-    elseif b<0
-        scale = .75*(y0)/(-dY);
-    else scale = 1; 
-    end
-    y0 = y0 +dY*scale; 
-    error = abs(dY);
-    count = count+1;
-end
-% count
 
 function G = GibbVal2(x,y,Inlet,R_CH4min,R_CH4max,H2consume,Type,T,P,g0,XnP)
 global Ru

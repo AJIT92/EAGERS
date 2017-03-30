@@ -5,12 +5,15 @@ global Ru
 Ru = 8.314472; % Universal gas constant in kJ/K*kmol
 block = varargin{1};
 if length(varargin)==1 % first initialization
-    %% Load mask parameters (flow direction)
+    %% Load flow direction
     if length(block.connections) ==2
         block.hotStream = 0;
-    else block.hotStream = 1;
+        block = FlowDir(block,1);
+    else
+        block.hotStream = 1;
+        block = FlowDir(block,2);
     end
-    block = FlowDir(block);
+    
 
     %% Heat Exchanger
     block.Pdrop1 = 1;                                    % (kPa) pressure drop
@@ -37,7 +40,8 @@ if length(varargin)==1 % first initialization
     block.Area = block.Length*block.Channels*(2*block.H_Channel+2*block.W_Channel)/block.nodes; %surface area of each node 
     block.Convection = block.h_conv*block.Area/1000; % h *A, W/m^2*K  x m^2  / 1000 = kW/K
     block.SolidArea = block.Width*block.Height - block.Channels*block.W_Channel*block.H_Channel;
-    block.Conduction = 0;%block.Solid_CondCoef*block.SolidArea/(block.Length/block.nodes/2)/1000; %heat transfer coefficient between previous and next node
+    block.ConductionPN = 0;%block.Solid_CondCoef*block.SolidArea/(block.Length/block.nodes/2)/1000; %heat transfer coefficient between previous and next node
+    block.ConductionLR = block.ConductionPN; %left right conduction (only doing a single row)
     
     %for initial flow guess assume 50K between solid and primary flow
     Atotal = block.Length*block.Channels*(2*block.H_Channel+2*block.W_Channel); %surface area of each node 
@@ -52,57 +56,57 @@ if length(varargin)==1 % first initialization
     
     block.spec1 = fieldnames(block.InletGuess);
     for i = 1:1:length(block.spec1)
-        Inlet.Primary.(block.spec1{i}) = block.InletGuess.(block.spec1{i})*ScaleFlow;
+        Inlet.Flow1.(block.spec1{i}) = block.InletGuess.(block.spec1{i})*ScaleFlow;
     end
     criticalSpecies = {'CH4';'CO';'CO2';'H2';'H2O'};
     for i = 1:1:length(criticalSpecies)
         if ~ismember(block.spec1,criticalSpecies{i})
-            Inlet.Primary.(criticalSpecies{i}) = 0;
+            Inlet.Flow1.(criticalSpecies{i}) = 0;
         end
     end
-    block.S2C = Inlet.Primary.H2O/(Inlet.Primary.CH4 + .5*Inlet.Primary.CO);
+    block.S2C = Inlet.Flow1.H2O/(Inlet.Flow1.CH4 + .5*Inlet.Flow1.CO);
     block.scaleK_WGS = 1;
     block.scaleK_CH4 = 1;
-    Inlet.Primary.T = 723;
-    Inlet.PrimaryPout = 101;
+    Inlet.Flow1.T = 723;
+    Inlet.Flow1Pout = 101;
     block.ReformedPin.IC = 101+block.Pdrop1;
     block.T.Primary = linspace(700,973,block.nodes)';
     if block.hotStream ==1
         block.Pdrop2 = 1;                                    % (kPa) pressure drop
         block.Vol_2 = block.Vol_1;
         block.spec2 = {'N2'};
-        Inlet.Secondary.N2 = 1;
-        Inlet.Secondary.T = 1050;
-        C = SpecHeat(Inlet.Secondary);
+        Inlet.Flow2.N2 = 1;
+        Inlet.Flow2.T = 1050;
+        C = SpecHeat(Inlet.Flow2);
         ScaleFlow2 = Qtrans/(C*50); %assume 50K of temp drop on hot side
-        Inlet.Secondary.N2 = ScaleFlow2;
+        Inlet.Flow2.N2 = ScaleFlow2;
         block.CooledPin.IC = 101+block.Pdrop2;
-        Inlet.SecondaryPout = 101;
+        Inlet.Flow2Pout = 101;
     end
     %% Run Initial Condition
-    [Primary,R] = equilib2D(Inlet.Primary,block.T.Primary(block.PrimaryDir(end)),Inlet.PrimaryPout,0,'Reformer',1,[]);
-%     refPerc = R.CH4/Inlet.Primary.CH4
+    [Primary,R] = equilib2D(Inlet.Flow1,block.T.Primary(block.Flow1Dir(end)),Inlet.Flow1Pout,0,'Reformer',1,[]);
+%     refPerc = R.CH4/Inlet.Flow1.CH4
     
-    R.CH4 = ones(length(block.PrimaryDir),1)*R.CH4/length(block.PrimaryDir);
-    R.WGS = ones(length(block.PrimaryDir),1)*R.WGS/length(block.PrimaryDir);
+    R.CH4 = ones(length(block.Flow1Dir),1)*R.CH4/length(block.Flow1Dir);
+    R.WGS = ones(length(block.Flow1Dir),1)*R.WGS/length(block.Flow1Dir);
     
     [h,~] = enthalpy(block.T.Primary,{'H2','H2O','O2','CO','CO2','CH4'});
     h_rxn1 = h.CO+3*h.H2-h.CH4-h.H2O;
     h_rxn2 = h.CO2+h.H2-h.CO-h.H2O;
-    Qref = h_rxn1.*R.CH4+h_rxn2.*R.WGS; %heat transfer to reforming reactions;
-    [block.Tstates,block.HTconv,block.HTcond] = SteadyTemps(block,Qref,Inlet);
-    block = Set_IC(block,Primary,Inlet.Secondary);
+    block.Qref = h_rxn1.*R.CH4+h_rxn2.*R.WGS; %heat transfer to reforming reactions;
+    [block.Tstates,block.HTcond,block.HTconv] = SteadyTemps(block,Inlet);
+    block = Set_IC(block,Primary,Inlet.Flow2);
 
     [Primary, Secondary,block] = solveInitCond(Inlet,block);
     
     %% set up ports : Inlets need to either connected or have initial condition, outlets need an initial condition, and it doesn't matter if they have a connection 
-    block.PortNames = {'Primary','PrimaryPout','Reformed','ReformedPin','MeasureReformT','MeasureS2C'};
-    block.Primary.type = 'in';
-    block.Primary.IC  = Inlet.Primary;
+    block.PortNames = {'Flow1','Flow1Pout','Reformed','ReformedPin','MeasureReformT','MeasureS2C'};
+    block.Flow1.type = 'in';
+    block.Flow1.IC  = Inlet.Flow1;
     
-    block.PrimaryPout.type = 'in';
-    block.PrimaryPout.IC = 101; %Atmospheric pressure
-    block.PrimaryPout.Pstate = []; %identifies the state # of the pressure state if this block has one
+    block.Flow1Pout.type = 'in';
+    block.Flow1Pout.IC = 101; %Atmospheric pressure
+    block.Flow1Pout.Pstate = []; %identifies the state # of the pressure state if this block has one
 
     block.Reformed.type = 'out';
     block.Reformed.IC  = Primary;
@@ -117,17 +121,17 @@ if length(varargin)==1 % first initialization
     block.MeasureS2C.type = 'out';
     block.MeasureS2C.IC = block.S2C;
     
-    block.P_Difference = {'ReformedPin','PrimaryPout';};
+    block.P_Difference = {'ReformedPin','Flow1Pout';};
     block.PfactorPrimary = NetFlow(Primary)/block.Pdrop1;
 
     if block.hotStream==1
-        block.PortNames = {'Primary','PrimaryPout','Secondary','SecondaryPout','Reformed','ReformedPin','Cooled','CooledPin','MeasureReformT','MeasureCooledT','MeasureS2C'};
-        block.Secondary.type = 'in';
-        block.Secondary.IC  = Inlet.Secondary;
+        block.PortNames = {'Flow1','Flow1Pout','Flow2','Flow2Pout','Reformed','ReformedPin','Cooled','CooledPin','MeasureReformT','MeasureCooledT','MeasureS2C'};
+        block.Flow2.type = 'in';
+        block.Flow2.IC  = Inlet.Flow2;
         
-        block.SecondaryPout.type = 'in';
-        block.SecondaryPout.IC = 101; %Atmospheric pressure
-        block.SecondaryPout.Pstate = []; %identifies the state # of the pressure state if this block has one
+        block.Flow2Pout.type = 'in';
+        block.Flow2Pout.IC = 101; %Atmospheric pressure
+        block.Flow2Pout.Pstate = []; %identifies the state # of the pressure state if this block has one
         
         block.Cooled.type = 'out';
         block.Cooled.IC  = Secondary;
@@ -141,13 +145,7 @@ if length(varargin)==1 % first initialization
         block.MeasureCooledT.type = 'out';
         block.MeasureCooledT.IC = Secondary.T;
         
-        block.P_Difference = {'ReformedPin','PrimaryPout'; 'CooledPin', 'SecondaryPout';};
-        
-%         Q = enthalpy(Inlet.Secondary) - enthalpy(Secondary);
-%         ideal = Secondary;
-%         ideal.T = Inlet.Primary.T;
-%         Qideal = enthalpy(Inlet.Secondary) - enthalpy(ideal);
-%         effectiveness = Q/Qideal
+        block.P_Difference = {'ReformedPin','Flow1Pout'; 'CooledPin', 'Flow2Pout';};        
     end
     for i = 1:1:length(block.PortNames)
         if length(block.connections)<i || isempty(block.connections{i})
@@ -167,8 +165,8 @@ elseif length(varargin)==2 %% Have inlets connected, re-initialize
     if block.hotStream==1
         N=3;
     end
-    block.ReformedPin.IC = Inlet.PrimaryPout+block.Pdrop1;
-    SpecNew = fieldnames(Inlet.Primary);
+    block.ReformedPin.IC = Inlet.Flow1Pout+block.Pdrop1;
+    SpecNew = fieldnames(Inlet.Flow1);
     SpecNew = SpecNew(~strcmp('T',SpecNew));
     sp = length(block.spec1);
     n = (N+sp)*block.nodes;
@@ -182,13 +180,13 @@ elseif length(varargin)==2 %% Have inlets connected, re-initialize
     end
     for i = 1:1:length(block.spec1)
         if ~ismember(block.spec1{i},SpecNew)
-            Inlet.Primary.(block.spec1{i})=0;
+            Inlet.Flow1.(block.spec1{i})=0;
         end
     end
-    block.S2C = Inlet.Primary.H2O/(Inlet.Primary.CH4 + .5*Inlet.Primary.CO);
+    block.S2C = Inlet.Flow1.H2O/(Inlet.Flow1.CH4 + .5*Inlet.Flow1.CO);
     if block.hotStream==1
-        block.CooledPin.IC = Inlet.SecondaryPout+block.Pdrop2;
-        SpecNew = fieldnames(Inlet.Secondary);
+        block.CooledPin.IC = Inlet.Flow2Pout+block.Pdrop2;
+        SpecNew = fieldnames(Inlet.Flow2);
         SpecNew = SpecNew(~strcmp('T',SpecNew));
         sp = length(block.spec2);
         n = n + sp*block.nodes;
@@ -202,7 +200,7 @@ elseif length(varargin)==2 %% Have inlets connected, re-initialize
         end
         for i = 1:1:length(block.spec2)
             if ~ismember(block.spec2{i},SpecNew)
-                Inlet.Secondary.(block.spec2{i})=0;
+                Inlet.Flow2.(block.spec2{i})=0;
             end
         end
     end
@@ -213,8 +211,8 @@ elseif length(varargin)==2 %% Have inlets connected, re-initialize
     
     block.ReformedPin.Pstate = length(block.Scale); %identifies the state # of the pressure state if this block has one
     
-    block.Primary.IC  = Inlet.Primary;
-    block.PrimaryPout.IC = Inlet.PrimaryPout;
+    block.Primary.IC  = Inlet.Flow1;
+    block.PrimaryPout.IC = Inlet.Flow1Pout;
     block.Reformed.IC  = Primary;
     block.ReformedPin.IC  = block.ReformedPin.IC;
     block.MeasureReformT.IC = Primary.T;
@@ -223,19 +221,12 @@ elseif length(varargin)==2 %% Have inlets connected, re-initialize
     if block.hotStream==1
         block.CooledPin.Pstate = length(block.Scale); %identifies the state # of the pressure state if this block has one
         block.ReformedPin.Pstate = length(block.Scale)-1;
-        block.Secondary.IC  = Inlet.Secondary;
-        block.SecondaryPout.IC = Inlet.SecondaryPout; 
+        block.Secondary.IC  = Inlet.Flow2;
+        block.SecondaryPout.IC = Inlet.Flow2Pout; 
         block.Cooled.IC  = Secondary;
         block.CooledPin.IC  = block.CooledPin.IC;
         block.MeasureCooledT.IC = Secondary.T;        
         block.PfactorSecondary = NetFlow(Secondary)/block.Pdrop2;
-%         Q = enthalpy(Inlet.Secondary) - enthalpy(Secondary);
-%         ideal = Secondary;
-%         ideal.T = Inlet.Primary.T;
-%         Qideal = enthalpy(Inlet.Secondary) - enthalpy(ideal);
-%         effectiveness = Q/Qideal
-%         disp(Primary.T)
-%         disp(Inlet.Secondary.T)
     end
 end
 
@@ -243,11 +234,11 @@ end
 function [Flow1, Flow2,block] = solveInitCond(Inlet,block)
 nodes = block.nodes;
 specInterest = {'CH4','CO','CO2','H2','H2O'};
-spec = fieldnames(Inlet.Primary);
+spec = fieldnames(Inlet.Flow1);
 spec = spec(~strcmp('T',spec));
 for i = 1:1:length(specInterest)
     if ~ismember(specInterest{i},spec)
-        Inlet.Primary.(specInterest{i}) = 0;
+        Inlet.Flow1.(specInterest{i}) = 0;
     end
 end
 
@@ -257,14 +248,14 @@ if block.hotStream ==1
 end
 n = N*nodes;
 sp = length(block.spec1);
-scaleFlow = NetFlow(Inlet.Primary)/sum(block.Scale(n+1:nodes:n+sp*nodes));
+scaleFlow = NetFlow(Inlet.Flow1)/sum(block.Scale(n+1:nodes:n+sp*nodes));
 for i = 1:1:nodes
     block.Scale(n+i:nodes:n+sp*nodes) = block.Scale(n+i:nodes:n+sp*nodes)*scaleFlow;
 end
 if block.hotStream ==1
     n = (N+sp)*nodes;
     sp = length(block.spec2);
-    scaleFlow = NetFlow(Inlet.Secondary)/sum(block.Scale(n+1:nodes:n+sp*nodes));
+    scaleFlow = NetFlow(Inlet.Flow2)/sum(block.Scale(n+1:nodes:n+sp*nodes));
     for i = 1:1:nodes
         block.Scale(n+i:nodes:n+sp*nodes) = block.Scale(n+i:nodes:n+sp*nodes)*scaleFlow;
     end
@@ -289,161 +280,71 @@ end
 block.Area = Y(end)*block.Area;
 block.HTconv = Y(end)*block.HTconv;
 block.Tstates = Y(1:N*nodes);
+
 block = Set_IC(block,Primary,Secondary);
-Flow1.T = Primary.T(block.PrimaryDir(1,end));
-for i = 1:1:length(block.spec1)
-    Flow1.(block.spec1{i}) = Primary.(block.spec1{i})(block.PrimaryDir(1,end));
-end
+
+Flow1 = MergeLastColumn(Primary,block.Flow1Dir,1);
 if block.hotStream==1
-    Flow2.T = Secondary.T(block.SecondaryDir(1,end));
-    for i = 1:1:length(block.spec2)
-        Flow2.(block.spec2{i}) = Secondary.(block.spec2{i})(block.SecondaryDir(1,end));
-    end
+    Flow2 = MergeLastColumn(Secondary,block.Flow2Dir,1);
 else Flow2 = [];
 end
 
 
-function [T,HTconv,HTcond]= SteadyTemps(block,Qref,Inlet)    
+function block = Set_IC(block,Primary,Secondary)
+global Ru
 nodes = block.nodes;
-N = 2;
-s=0;
-hA = block.Convection;
-Cp1 = mean(SpecHeat(Inlet.Primary));
-Flow1 = NetFlow(Inlet.Primary);
+
+N = 2 ;
+nS = nodes*(N + length(block.spec1)) + 1;
 if block.hotStream ==1
     N = 3;
-    s = 1;
-    Cp2 = mean(SpecHeat(Inlet.Secondary));
-    Flow2 = NetFlow(Inlet.Secondary);
+    nS = nodes*(3 + length(block.spec1) + length(block.spec2)) + 2;
 end
-n = 2*N*nodes+2;
+block.IC = ones(nS,1); 
+block.Scale = block.IC;
+block.tC = ones(nS,1); % time constant for derivative dY
 
-A = zeros(n,n);
-b = zeros(n,1);
-%Tprimary in 
-A(n-s,n-s) = 1; %cold T
-b(n-s) = Inlet.Primary.T;
-if block.hotStream ==1 %T secondary in
-    A(n,n) = 1; %hot T
-    b(n) = Inlet.Secondary.T;
-end
-
-for k = 1:1:nodes
-    %% averaging inlet and outlet temp for gaseous nodes
-    %QT1 : heat transfer into primary flow
-    A(k,k) = -1;
-    A(k,k+(N+1)*nodes) = hA;
-    A(k,k+N*nodes) = -.5*hA;
-    [i,j] = find(block.PrimaryDir==k);
-    if j==1 %first column averaged with inlet temperature
-        A(k,n-s) = -.5*hA;
-    else % other columns averaged with previous one
-        k2 = block.PrimaryDir(i,j-1);
-        A(k,k2+N*nodes) = -.5*hA;
-    end
-
-    %QT2 : heat transfer into solid
-    A(k+nodes,k+nodes) = -1;
-    if block.hotStream ==0
-        A(k+nodes,k+(N+1)*nodes) = -1*hA;
-        A(k+nodes,k+N*nodes) = .5*hA;
-        if j==1 %first column averaged with inlet temperature
-            A(k+nodes,n-s) = .5*hA;
-        else % other columns averaged with previous one
-            A(k+nodes,k2+N*nodes) = .5*hA;
-        end
-    elseif block.hotStream ==1
-        A(k+nodes,k+(N+1)*nodes) = -2*hA;
-        A(k+nodes,k+N*nodes) = .5*hA;
-        A(k+nodes,k+(N+2)*nodes) = .5*hA;
-        if j==1 %first column averaged with inlet temperature
-            A(k+nodes,n-s) = .5*hA;
-        else % other columns averaged with previous one
-            A(k+nodes,k2+N*nodes) = .5*hA;
-        end
-        [i,j] = find(block.SecondaryDir==k);
-        if j==1 %first column averaged with inlet temperature
-            A(k+nodes,n) = .5*hA;
-        else
-            k2 = block.SecondaryDir(i,j-1);
-            A(k+nodes,k2+(N+2)*nodes) = .5*hA;
-        end
-
-        %QT3 : heat transfer into hot flow
-        A(k+2*nodes,k+2*nodes) = -1;
-        A(k+2*nodes,k+(N+1)*nodes) = hA;
-        A(k+2*nodes,k+(N+2)*nodes) = -.5*hA;
-        if j==1 %first column averaged with inlet temperature
-            A(k+2*nodes,n) = -.5*hA;
-        else % other columns averaged with previous one
-            A(k+2*nodes,k2+(N+2)*nodes) = -.5*hA;
-        end
-    end
-    
-    %Tcold: Temperature of cold flow
-    A(k+N*nodes,k) = 1;
-    A(k+N*nodes,k+N*nodes) = -Cp1*Flow1;
-    [i,j] = find(block.PrimaryDir==k);
-    if j==1 %first column receives fresh air
-        A(k+N*nodes,n-s) = Cp1*Flow1;
+block.Scale(1:nodes,1) = block.Tstates(1:nodes);%temperature (K)
+Cp = SpecHeat(Primary);
+block.tC(1:block.nodes,1) = block.Vol_1*Cp*block.ReformedPin.IC./(Ru*block.Tstates(1:nodes));
+n = N*nodes;
+Flow = NetFlow(Primary);
+for i = 1:1:length(block.spec1)
+    if any(Primary.(block.spec1{i})==0) %need to prevent possible divide by zero
+        block.IC(n+1:n+nodes,1) = Primary.(block.spec1{i})./Flow;%concentration
+        block.Scale(n+1:n+nodes,1) = Flow; 
     else
-        index = block.PrimaryDir(i,j-1);
-        A(k+N*nodes,index +N*nodes) = Cp1*Flow1;
+        block.Scale(n+1:n+nodes,1) = Primary.(block.spec1{i}); 
     end
-    b(k+N*nodes) = Qref(k);
-
-    %Tsolid: Temperature of solid
-    A(k+(N+1)*nodes,k+nodes) = 1;
-    b(k+(N+1)*nodes) = 0;%Qref(k);
-    if block.hotStream ==1
-        %Temperature of secondary flow
-        A(k+(N+2)*nodes,k+2*nodes) = 1;
-        A(k+(N+2)*nodes,k+(N+2)*nodes) = -Cp2*Flow2; 
-        [i,j] = find(block.SecondaryDir==k);
-        if j==1 %first column receives fresh flow
-            A(k+(N+2)*nodes,n) = Cp2*Flow2; %fresh inlet
-        else
-            index = block.SecondaryDir(i,j-1);
-            A(k+(N+2)*nodes,index + (N+2)*nodes) = Cp2*Flow2;
-        end
-    end
+    block.tC(n+1:n+nodes,1) = (block.Vol_1*block.ReformedPin.IC)./(block.Tstates(1:nodes)*Ru);
+    n = n + nodes;
 end
-% remove gaseous temperature averaging from 1st node
-k1 = block.PrimaryDir(:,1); %first column
-for j =1:1:length(k1)
-    k = k1(j);
-    A(k,k+N*nodes) = A(k,k+N*nodes) -.5*hA; %HT to cold flow from solid
-    A(k,n-s) = A(k,n-s) +.5*hA; %ignore cold flow inlet
 
-    A(k+nodes,k+N*nodes) = A(k+nodes,k+N*nodes) +.5*hA;%HT to solid from cold flow
-    A(k+nodes,n-s) = A(k+nodes,n-s) -.5*hA;%ignore cold flow inlet
-end
+block.Scale(1+nodes:2*nodes,1) = block.Tstates(1+nodes:2*nodes);%temperature (K)
+block.tC(1+nodes:2*nodes,1) = block.Vol_Solid*block.Solid_Density*block.Solid_SpecHeat; %solid
+
 if block.hotStream ==1
-    k1 = block.SecondaryDir(:,1); %first column
-    for j =1:1:length(k1)
-        k = k1(j);
-        A(k+2*nodes,k+(N+2)*nodes) = A(k+2*nodes,k+(N+2)*nodes) -.5*hA; %HT to hot flow from solid
-        A(k+2*nodes,n) = A(k+2*nodes,n) +.5*hA; %ignore hot flow inlet
-
-        A(k+nodes,k+(N+2)*nodes) = A(k+nodes,k+(N+2)*nodes) +.5*hA;%HT to solid from hot flow
-        A(k+nodes,n) = A(k+nodes,n) -.5*hA;%ignore hot flow inlet
+    block.Scale(1+2*nodes:3*nodes,1) = block.Tstates(1+2*nodes:3*nodes);%temperature (K)
+    Cp = SpecHeat(Secondary);
+    block.tC(1+2*nodes:3*nodes,1) = block.Vol_2*Cp*block.CooledPin.IC./(Ru*block.Tstates(1:nodes));
+    Flow = NetFlow(Secondary);
+    for i = 1:1:length(block.spec2)
+        if any(Secondary.(block.spec2{i})==0) %need to prevent possible divide by zero
+            block.IC(n+1:n+nodes,1) = Secondary.(block.spec2{i})./Flow;
+            block.Scale(n+1:n+nodes,1) = Flow;
+        else
+            block.Scale(n+1:n+nodes,1) = Secondary.(block.spec2{i}); 
+        end
+        block.tC(n+1:n+nodes,1) = (block.Vol_2*block.CooledPin.IC)./(block.Tstates(2*nodes+1:3*nodes)*Ru);
+        n = n + nodes; 
     end
 end
-HTconv = A(1:N*nodes,N*nodes+1:2*N*nodes);%matrix of coefficients to multiply by vector of temperature and get the heat transfer by convection between layers and nodes
-%% Conduction: prev and next
-A2 = zeros(n,n);
-prev = block.HTadjacent(:,1);
-next = block.HTadjacent(:,2);
-for k = 1:1:nodes
-    A2(k+nodes,k+4*nodes) = A2(k+nodes,k+4*nodes) - 2*block.Conduction;
-    A2(k+nodes,prev(k)+4*nodes) = A2(k+nodes,prev(k)+4*nodes)+block.Conduction;
-    A2(k+nodes,next(k)+4*nodes) = A2(k+nodes,next(k)+4*nodes)+block.Conduction;
+block.Scale(n+1,1) = block.ReformedPin.IC;%pressure
+block.tC(n+1,1) = block.Vol_1;  %pressure
+if block.hotStream ==1
+    block.Scale(n+2,1) = block.CooledPin.IC;%pressure
+    block.tC(n+2,1) = block.Vol_2; %pressure
 end
-HTcond = A2(1:N*nodes,N*nodes+1:2*N*nodes);%matrix of coefficients to multiply by vector of temperature and get the heat transfer by convection between layers and nodes
-A = A+A2;
-x= A\b;
-T = x(N*nodes+1:n-s-1);
-
 
 function dY = SolveDynamic(t,Y,block,Inlet)
 nodes = block.nodes;
@@ -453,7 +354,7 @@ n = 0;
 Primary.Outlet.T = Y(n+1:n+nodes);n = n+2*nodes;
 s = 0;
 N = 2;
-if isfield(Inlet,'Secondary')
+if isfield(Inlet,'Flow2')
     SecondaryOut.T = Y(n+1:n+nodes);n = n+nodes;
     s = 1;
     N = 3;
@@ -462,13 +363,13 @@ end
 for i = 1:1:length(block.spec1)
     Primary.Outlet.(block.spec1{i}) = max(0,Y(n+1:n+nodes));n = n+nodes;
 end
-for j = 1:1:length(block.PrimaryDir(1,:));%1:columns
-    k = block.PrimaryDir(:,j);
+for j = 1:1:length(block.Flow1Dir(1,:));%1:columns
+    k = block.Flow1Dir(:,j);
     r = length(k);
     if j==1
-        Primary.Inlet.T(k,1) = Inlet.Primary.T;
+        Primary.Inlet.T(k,1) = Inlet.Flow1.T;
         for i = 1:1:length(block.spec1)
-            Primary.Inlet.(block.spec1{i})(k,1) = Inlet.Primary.(block.spec1{i})/r;
+            Primary.Inlet.(block.spec1{i})(k,1) = Inlet.Flow1.(block.spec1{i})/r;
         end
     else
         Primary.Inlet.T(k,1) = Primary.Outlet.T(kprev,1);
@@ -478,18 +379,18 @@ for j = 1:1:length(block.PrimaryDir(1,:));%1:columns
     end
     kprev = k;
 end
-if isfield(Inlet,'Secondary')
+if isfield(Inlet,'Flow2')
     %% Hot flow
     for i = 1:1:length(block.spec2)
         SecondaryOut.(block.spec2{i}) = max(0,Y(n+1:n+nodes));n = n+nodes;
     end
-    for j = 1:1:length(block.SecondaryDir(1,:));%1:columns
-        k = block.SecondaryDir(:,j);
+    for j = 1:1:length(block.Flow2Dir(1,:));%1:columns
+        k = block.Flow2Dir(:,j);
         r = length(k);
         if j==1
-            SecondaryIn.T(k,1) = Inlet.Secondary.T;
+            SecondaryIn.T(k,1) = Inlet.Flow2.T;
             for i = 1:1:length(block.spec2)
-                SecondaryIn.(block.spec2{i})(k,1) = Inlet.Secondary.(block.spec2{i})/r;
+                SecondaryIn.(block.spec2{i})(k,1) = Inlet.Flow2.(block.spec2{i})/r;
             end
         else
             SecondaryIn.T(k,1) = SecondaryOut.T(kprev);
@@ -536,7 +437,7 @@ HoutCold = enthalpy(Primary.Outlet);
 scale = NetFlow(Primary.Outlet)./NetFlow(RefOut);
 HinCold = enthalpy(Primary.Inlet).*scale;
 
-if isfield(Inlet,'Secondary')
+if isfield(Inlet,'Flow2')
     HoutHot = enthalpy(SecondaryOut);
     scale = NetFlow(SecondaryOut)./NetFlow(SecondaryIn);
     HinHot = enthalpy(SecondaryIn).*scale;
@@ -545,8 +446,8 @@ else
     QT = block.HTconv*Y(1:N*nodes) + block.HTcond*Y(1:N*nodes);
 end
 
-for i=1:1:length(block.PrimaryDir(1,:))
-    k = block.PrimaryDir(:,i);
+for i=1:1:length(block.Flow1Dir(1,:))
+    k = block.Flow1Dir(:,i);
     dY(k)= (QT(k) + HinCold(k) - HoutCold(k))./block.tC(k); %Cold flow
     if i>1
         dY(k) = dY(k)+dY(kprev);
@@ -558,9 +459,9 @@ for j = 1:1:length(block.spec1)
     dY((1+j+s)*nodes+1:(2+j+s)*nodes)= (RefOut.(block.spec1{j})- Primary.Outlet.(block.spec1{j})) ./block.tC((1+j+s)*nodes+1:(2+j+s)*nodes); %all species concentration
 end 
 
-if isfield(Inlet,'Secondary')
-    for i=1:1:length(block.SecondaryDir(1,:))
-        k = block.SecondaryDir(:,i);
+if isfield(Inlet,'Flow2')
+    for i=1:1:length(block.Flow2Dir(1,:))
+        k = block.Flow2Dir(:,i);
         dY(2*nodes+k)= (QT(2*nodes+k) + HinHot(k) - HoutHot(k))./block.tC(2*nodes+k); %Hot flow
         if i>1
             dY(2*nodes+k) = dY(2*nodes+k)+dY(2*nodes+kprev);
@@ -574,101 +475,23 @@ if isfield(Inlet,'Secondary')
 end
 
 if strcmp(block.method,'RefPerc')
-    RefPerc = (Inlet.Primary.CH4-Primary.Outlet.CH4(block.PrimaryDir(1,end)))/Inlet.Primary.CH4;
+    RefPerc = (Inlet.Flow1.CH4-Primary.Outlet.CH4(block.Flow1Dir(1,end)))/Inlet.Flow1.CH4;
     error = block.ReformTarget - RefPerc;
 elseif strcmp(block.method,'ColdT')
-    error = (block.ReformTarget - Primary.T(block.PrimaryDir(1,end)))/100;
+    error = (block.ReformTarget - Primary.T(block.Flow1Dir(1,end)))/100;
 elseif strcmp(block.method,'HotT')
-    error = (Secondary.T(block.SecondaryDir(1,end)) - block.ReformTarget)/100;
+    error = (Secondary.T(block.Flow2Dir(1,end)) - block.ReformTarget)/100;
 elseif strcmp(block.method,'Effectiveness')
-    FlowIdeal = Inlet.Secondary;
-    FlowIdeal.T = Primary.Outlet.T(block.SecondaryDir(1,end));
-    maxQT = enthalpy(FlowIdeal) - enthalpy(Inlet.Secondary); %assume ideal is at same temperature as 1st node on primary side
-    Flow2.T = Secondary.T(block.SecondaryDir(1,end));
+    FlowIdeal = Inlet.Flow2;
+    FlowIdeal.T = Primary.Outlet.T(block.Flow2Dir(1,end));
+    maxQT = enthalpy(FlowIdeal) - enthalpy(Inlet.Flow2); %assume ideal is at same temperature as 1st node on primary side
+    Flow2.T = Secondary.T(block.Flow2Dir(1,end));
     for i = 1:1:length(block.spec2)
-        Flow2.(block.spec2{i}) = Secondary.(block.spec2{i})(block.SecondaryDir(1,end));
+        Flow2.(block.spec2{i}) = Secondary.(block.spec2{i})(block.Flow2Dir(1,end));
     end
-    QT = enthalpy(Flow2) - enthalpy(Inlet.Secondary);
+    QT = enthalpy(Flow2) - enthalpy(Inlet.Flow2);
     error = block.ReformTarget - QT/maxQT;
 elseif strcmp(block.method,'none')
     error = 0;
 end
 dY(end) = error; %slow change in the area
-
-
-function block = Set_IC(block,Primary,Secondary)
-global Ru
-nodes = block.nodes;
-
-N = 2 ;
-nS = nodes*(N + length(block.spec1)) + 1;
-if block.hotStream ==1
-    N = 3;
-    nS = nodes*(3 + length(block.spec1) + length(block.spec2)) + 2;
-end
-block.IC = ones(nS,1); 
-block.Scale = block.IC;
-block.tC = ones(nS,1); % time constant for derivative dY
-
-block.Scale(1:nodes,1) = block.Tstates(1:nodes);%temperature (K)
-Cp = SpecHeat(Primary);
-block.tC(1:block.nodes,1) = block.Vol_1*Cp*block.ReformedPin.IC./(Ru*block.Tstates(1:nodes));
-n = N*nodes;
-Flow = NetFlow(Primary);
-for i = 1:1:length(block.spec1)
-    X = Primary.(block.spec1{i})./Flow;%concentration
-    if any(X<.01) %need to prevent possible divide by zero
-        block.IC(n+1:n+nodes,1) = X;
-        block.Scale(n+1:n+nodes,1) = Flow; 
-    else
-        block.Scale(n+1:n+nodes,1) = Primary.(block.spec1{i}); 
-    end
-    block.tC(n+1:n+nodes,1) = (block.Vol_1*block.ReformedPin.IC)./(block.Tstates(1:nodes)*Ru);
-    n = n + nodes;
-end
-
-block.Scale(1+nodes:2*nodes,1) = block.Tstates(1+nodes:2*nodes);%temperature (K)
-block.tC(1+nodes:2*nodes,1) = block.Vol_Solid*block.Solid_Density*block.Solid_SpecHeat; %solid
-
-if block.hotStream ==1
-    block.Scale(1+2*nodes:3*nodes,1) = block.Tstates(1+2*nodes:3*nodes);%temperature (K)
-    Cp = SpecHeat(Secondary);
-    block.tC(1+2*nodes:3*nodes,1) = block.Vol_2*Cp*block.CooledPin.IC./(Ru*block.Tstates(1:nodes));
-    for i = 1:1:length(block.spec2)
-        if any(Secondary.(block.spec2{i})==0) %need to prevent possible divide by zero
-            Flow = NetFlow(Secondary);
-            block.IC(n+1:n+nodes,1) = Secondary.(block.spec2{i})./Flow;
-            block.Scale(n+1:n+nodes,1) = Flow;
-        else
-            block.Scale(n+1:n+nodes,1) = Secondary.(block.spec2{i}); 
-        end
-        block.tC(n+1:n+nodes,1) = (block.Vol_2*block.CooledPin.IC)./(block.Tstates(2*nodes+1:3*nodes)*Ru);
-        n = n + nodes; 
-    end
-end
-block.Scale(n+1,1) = block.ReformedPin.IC;%pressure
-block.tC(n+1,1) = block.Vol_1;  %pressure
-if block.hotStream ==1
-    block.Scale(n+2,1) = block.CooledPin.IC;%pressure
-    block.tC(n+2,1) = block.Vol_2; %pressure
-end
-
-
-function block = FlowDir(block)
-% Script which orients the nodes relative to the flow directions
-% direction = 1: co-flow, direction = 2: counter-flow, direction = 3: cross-flow
-nodes = block.nodes;
-block.PrimaryDir = (1:nodes);
-if block.hotStream ==1
-    switch block.direction
-        case 'coflow'
-            block.SecondaryDir = (1:nodes); % matrix where first column is all nodes that recieve fresh air, second column is all nodes that those feed into....
-        case 'counterflow'
-            block.SecondaryDir = (nodes:-1:1); % matrix where first column is all nodes that recieve fresh air, second column is all nodes that those feed into....
-    end
-end
-block.HTadjacent = zeros(nodes,4);
-for i = 1:1:nodes
-    block.HTadjacent(i,1) = max(1,i-1);%previous node
-    block.HTadjacent(i,2) = min(nodes,i+1);%next node
-end

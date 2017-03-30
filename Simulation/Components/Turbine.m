@@ -4,8 +4,6 @@ function Out = Turbine(t,Y, Inlet,block,string1)
 % Three (3) outlets: Pressure in, Flow, Work output
 % Three (3) states: Tgas out, Twall, and pressure
 global Ru Tags
-Y = Y.*block.Scale;
-
 NetFlowIn = NetFlow(Inlet.FlowIn);
 Mmass = MassFlow(Inlet.FlowIn)/NetFlowIn;
 
@@ -14,10 +12,6 @@ nT =Inlet.FlowIn.T/block.Tdesign;% normalized T
 nRPM =Inlet.RPMin/(block.RPMdesign*nT^.5);%normalized RPM
 TurbPR =(Y(3)/Inlet.Pout-1)/(block.Pdesign - 1) + 1;%Turbine pressure ratio
     
-if isnan(TurbPR) || TurbPR == inf;
-    disp('Error');
-end
-
 i2 = find(block.RPM >=nRPM,1,'first');
 if isempty(i2)
     i2 = length(block.RPM);
@@ -26,11 +20,6 @@ elseif i2 ==1
 end
 i1 = i2-1;
 s =(nRPM - block.RPM(i1))/(block.RPM(i2) - block.RPM(i1));
-
-if isnan(s) || s == inf;
-    disp('Error');
-end
-
 
 PRVec = block.PressRatio(i1,:)*(1-s) + block.PressRatio(i2,:)*s;
 Beta = interp1(PRVec,block.Beta,TurbPR,'spline');
@@ -58,11 +47,11 @@ Cp = (SpecHeat(Inlet.FlowIn)+SpecHeat(FlowOut))/2;
 Gamma = Cp/(Cp - Ru);
 TurbFlow = FlowOut;
 TurbFlow.T = Inlet.FlowIn.T; %inlet flow at same rate as exit, but inlet temp
-[~, H1] = enthalpy(TurbFlow);
+H1 = enthalpy(TurbFlow);
 T2s = Inlet.FlowIn.T*(1/(Y(3)/Inlet.Pout))^((Gamma -1)/Gamma);
 FlowS = TurbFlow;
 FlowS.T = T2s;
-[~,H2s] = enthalpy(FlowS);
+H2s = enthalpy(FlowS);
 H2a = H1-(H1 - H2s)*Eff - Q_FlowWallC;
 Wt = (H1-H2a) - Q_FlowWallC;
 
@@ -83,9 +72,9 @@ if strcmp(string1,'Outlet')
     Tags.(block.name).nMflow = MassFlow(FlowOut)/block.FlowDesign;
 elseif strcmp(string1,'dY')
     dY = 0*Y;
-    [~,Hout] = enthalpy(FlowOut);
+    Hout = enthalpy(FlowOut);
     dY(1) = (H2a - Hout)*Ru*block.Tdesign/(Inlet.Pout*block.Volume*Cp);
     dY(2) = (Q_FlowWallC - Q_WallAmbC - Q_WallAmbR)/(block.Mass*block.SpecHeat);
     dY(3) = (NetFlowIn - NetFlowOut)*Ru*Y(1)/block.Volume;
-    Out = dY./block.Scale;
+    Out = dY;
 end

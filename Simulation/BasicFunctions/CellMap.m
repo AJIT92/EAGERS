@@ -13,14 +13,14 @@ switch block.direction
         Xlabel = 'Fuel Flow --> & Air Flow <--';
         Ylabel = 'Cell Width (parallel channels)';
     case 'crossflow'
-        Xlabel = 'Fuel Flow Direction -->';
-        Ylabel = 'Air Flow Direction --> ';
+        Xlabel = 'Cell Length (m)';
+        Ylabel = 'Cell Width (m)';
 end
 
 wC = block.L_Cell/columns;
 wR = block.W_Cell/rows;
 FCstates = Y(block.States).*block.Scale';
-CellT = FCstates(2*nodes+1:3*nodes);
+CellT = FCstates(2*nodes+1:3*nodes)-273;
 if rows ==1
     X = [0 linspace(.5*wC,block.L_Cell -.5*wC,columns) block.L_Cell];
     Y = [0 block.W_Cell];
@@ -128,17 +128,17 @@ elseif block.Manifold == 1  %% need to edit this
     Box2Z = [0 0 0 0 0];
 end
 
-figure(FigNum)
+figure(FigNum);
 surf(X, Y, Z, C,'FaceColor','interp','EdgeColor','none')
-caxis([block.TpenAvg-.75*block.deltaTStack block.TpenAvg+.75*block.deltaTStack]);
+caxis([block.TpenAvg-.75*block.deltaTStack-273 block.TpenAvg+.75*block.deltaTStack-273]);
 hold on
-plot3(HorizLinesX,HorizLinesY,HorizLinesZ,'k-','LineWidth',1)
+plot3(HorizLinesX,HorizLinesY,HorizLinesZ,'k-','LineWidth',1);
 plot3(VertLinesX,VertLinesY,VertLinesZ,'k-','LineWidth',1)
 plot3(Box1X,Box1Y,Box1Z,'k-','LineWidth',4)
 if block.Manifold ==1
     plot3(Box2X,Box2Y,Box2Z,'k-','LineWidth',3)
 end
-colorbar
+c = colorbar;
 hold off
 if block.Manifold ==0
     axis([0 block.L_Cell 0 block.W_Cell])
@@ -146,5 +146,6 @@ else
     axis([0 block.L_Plate 0 block.W_Plate])
 end
 view([0 90])
-xlabel(Xlabel)
-ylabel(Ylabel)
+xlabel(Xlabel,'FontSize',14)
+ylabel(Ylabel,'FontSize',14)
+% c.Label.String = 'Temperature (C)';

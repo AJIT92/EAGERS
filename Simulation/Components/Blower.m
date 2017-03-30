@@ -3,7 +3,6 @@ function Out = Blower(t,Y, Inlet,block,string1)
 % One (1) outlet: Flow
 % One (1) state: Speed
 global Ru Tags
-Y = Y.*block.Scale;
 Mmass = MassFlow(Inlet.Species);%kg/kmol
 RPM = Y(1)*60/(2*pi); %convert rad/s back to RPM
 
@@ -68,6 +67,5 @@ if strcmp(string1,'Outlet')
 elseif strcmp(string1,'dY')
     dY = 0*Y;
     dY(1) = NetPower/(block.Moment_Inertia*Y(1)); %dw/dt = P/(w*l) units of rad/s
-    dY = dY./block.Scale;
     Out = dY;
 end

@@ -3,9 +3,7 @@ function Out = DCDCConverter(t,Y, Inlet,block,string1)
 %0 States
 %6 Inlets: ILoad, VLoad, VMax, Ivmax, VMin, Ivmin
 %3 Outlet: Imin, Imax, VSource
-if strcmp(string1,'dY')
-    %no states
-elseif strcmp(string1,'Outlet')
+if strcmp(string1,'Outlet')
     Ivmax = block.Effic*Inlet.Ivmax*Inlet.VMax/Inlet.VLoad;%DC bus current when v = vmax
     Ivmin = block.Effic*Inlet.Ivmin*Inlet.VMin/Inlet.VLoad;%DC bus current when v = vmin
     
@@ -26,6 +24,6 @@ elseif strcmp(string1,'Outlet')
     Out.IMax = IMax;%max current applied to DC bus by source
     
     Out.VSource = V;%voltage on source circuit
-end
-
+elseif strcmp(string1,'dY')
+    %no states
 end

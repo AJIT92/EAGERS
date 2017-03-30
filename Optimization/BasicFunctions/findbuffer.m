@@ -1,5 +1,5 @@
 %storage needs to be loaded last so that the buffers can be calculated
-global Plant UB dischEff
+global Plant UB 
 nG = length(Plant.Generator);
 BuffPerc = Plant.optimoptions.Buffer; % percentage for buffer on storage
 for j = 1:1:nG
@@ -30,9 +30,9 @@ for j = 1:1:nG
                 end
             end
         end
-        Buffer = min((BuffPerc/100)*UB(j), (chargeCapacity))*dischEff(j);
+        Buffer = min((BuffPerc/100)*UB(j), (chargeCapacity))*Plant.Generator(j).OpMatA.Stor.DischEff;
         Plant.Generator(j).OpMatA.link.bineq(end-1) = -Buffer; %lower buffer ineq :  -SOC - W <= -Buffer becomes W>= buffer -SOC
-        Plant.Generator(j).OpMatA.link.bineq(end) = UB(j)*dischEff(j)-Buffer; %upper buffer ineq :  SOC - Z <= (UB-Buffer)
+        Plant.Generator(j).OpMatA.link.bineq(end) = UB(j)*Plant.Generator(j).OpMatA.Stor.DischEff-Buffer; %upper buffer ineq :  SOC - Z <= (UB-Buffer)
         Plant.Generator(j).OpMatA.Z.ub = Buffer;
         Plant.Generator(j).OpMatA.W.ub = Buffer;
         Plant.Generator(j).OpMatB = Plant.Generator(j).OpMatA;

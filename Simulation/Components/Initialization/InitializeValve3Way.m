@@ -9,7 +9,7 @@ if length(varargin)==1 %first initialization
     block.Scale =[];
 
     if ischar(block.InitialFlowIn)
-        block.InitialFlowIn = lookupVal(block.InitialFlowIn);
+        block.InitialFlowIn = ComponentProperty(block.InitialFlowIn);
     end
     spec = fieldnames(block.InitialFlowIn);
     for i = 1:1:length(spec)
@@ -60,23 +60,4 @@ if length(varargin)==2 %% Have inlets connected, re-initialize
     Out2.T = Inlet.Inlet.T;
     block.Out1.IC = Out1;
     block.Out2.IC = Out2;  
-end
-
-function A = lookupVal(initCond)
-global modelParam Tags
-r = strfind(initCond,'.');
-if ~isempty(r)
-    if strcmp(initCond(1:r(1)-1),'Tags')
-        A = Tags.(initCond(r(1)+1:r(2)-1)).(initCond(r(2)+1:end));
-    else
-        r = [r,length(initCond)+1];
-        A = modelParam.(initCond(1:r(1)-1));
-        for i = 2:1:length(r)
-            field = initCond(r(i-1)+1:r(i)-1);
-            A = A.(field);
-        end
-    end
-else
-    A = modelParam.(initCond);
-end
-    
+end 

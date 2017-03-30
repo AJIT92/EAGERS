@@ -1,5 +1,5 @@
 function CreateNewProject(Name,hCreate)
-global Plant SYSINDEX Model_dir figHandle Holidays
+global Plant SYSINDEX Model_dir figHandle
 Plant.Name = Name;
 
 %% Building Loads 
@@ -9,7 +9,6 @@ if J == 1
     uiwait(h)
     Plant.Data.Timestamp = linspace(datenum(2013,1,1,.25,0,0),datenum(2014,1,1),96*(datenum(2014,1,1)-datenum(2013,1,1)));
     Plant.Data.Holidays = [735235;735255;735283;735318;735319;735320;735321;735322;735381;735402;735403;735404;735405;735406;735418;735479;735497;735498;735499;735500;735549;735566;735567;735591;735592;735593;735594;735599];%holidays of 2013, need to update
-    Holidays = Plant.Data.Holidays;
     filename = fullfile(Model_dir, 'System Library','Weather','1A.mat');
     load(filename)
     T=zeros(365*96,1);

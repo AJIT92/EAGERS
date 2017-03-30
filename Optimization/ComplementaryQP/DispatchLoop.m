@@ -1,5 +1,5 @@
 function DispatchLoop%% calculate new optimal Dispatch
-global Plant RealTime DispatchWaitbar Dispatch Si dischEff scaleTime UB LB timersOn% NumSteps loaded by GUI & load generators
+global Plant RealTime DispatchWaitbar Dispatch Si dischEff scaleTime UB LB timersOn% loaded by GUI & load generators
 global CurrentState DateSim LBmpc %changed in MPC loop
 global EC targetCharge targetDischarge  %result from dispatch loop used in Online loop
 options = Plant.optimoptions;

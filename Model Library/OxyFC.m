@@ -60,6 +60,7 @@ if S2C<Steam2Carbon %add anode recirculation
     Plant.Components.Mix1.TagInf = {'MassFlow';'Temperature';};
 end
 
+%Fuel Cell
 Plant.Components.FC1.type = 'FuelCell';
 Plant.Components.FC1.name = 'FC1';
 Plant.Components.FC1.FCtype = 'SOFC'; %SOFC, or MCFC 
@@ -79,12 +80,11 @@ Plant.Components.FC1.Steam2Carbon = Steam2Carbon; %steam to carbon ratio that fu
 Plant.Components.FC1.method = 'Achenbach'; %Determines reforming reaction kinetics options: 'Achenbach' , 'Leinfelder' , 'Drescher'   
 Plant.Components.FC1.L_Cell= .09;  %Cell length in meters
 Plant.Components.FC1.W_Cell = .09;  %Cell Width in meters  
-Plant.Components.FC1.DesignTarget = 'voltage'; %options are 'power density', 'voltage', or 'current density'
-Plant.Components.FC1.DesignTargetValue = 0.86; % power density specified in mW/cm^2, voltage specified in V/cell, current density specified in A/cm^2
-Plant.Components.FC1.Cells = ceil(Plant.Components.FC1.RatedStack_kW*1000/(Plant.Components.FC1.L_Cell*Plant.Components.FC1.W_Cell*Plant.Components.FC1.DesignTargetValue*5000)); %# of cells in stack (assuming 0.5 A/cm^2 --> 5,000 A/m^2)
+Plant.Components.FC1.Specification = 'voltage'; %options are 'cells', 'power density', 'voltage', or 'current density'. Note: careful when specifying cells that it arrives at a feasible power density
+Plant.Components.FC1.SpecificationValue = 0.86; % power density specified in mW/cm^2, voltage specified in V/cell, current density specified in A/cm^2
 Plant.Components.FC1.deltaTStack = 50; %temperature difference from cathode inlet to cathode outlet
 Plant.Components.FC1.TpenAvg = 1023;% 750 C, average electrolyte operating temperature
-Plant.Components.FC1.FuelUtilization = Plant.Components.FC1.DesignTargetValue*1.6 - .728;% ; %fuel utilization (net hydrogen consumed/ maximum hydrogen produced with 100% Co and CH4 conversion (initial guess, will be iterated)
+Plant.Components.FC1.FuelUtilization = Plant.Components.FC1.SpecificationValue*1.6 - .728;% ; %fuel utilization (net hydrogen consumed/ maximum hydrogen produced with 100% Co and CH4 conversion (initial guess, will be iterated)
 Plant.Components.FC1.AnodePdrop = 2; %design anode pressure drop
 Plant.Components.FC1.CathodePdrop = 10; %Design cathode pressure drop
 if S2C<Steam2Carbon %add anode recirculation
@@ -95,6 +95,7 @@ end
 Plant.Components.FC1.TagInf = {'Power';'Current';'Voltage';'PENavgT';'StackdeltaT';'H2utilization';'O2utilization';'TcathOut';'LocalNernst';};
 Plant.Components.FC1.TagFinal = {'Power';'Current';'Voltage';'PENavgT';'StackdeltaT';'H2utilization';'O2utilization';};
 
+%Controller
 Plant.Controls.Controller.type = 'ControlFCstack';
 Plant.Controls.Controller.name = 'Controller';
 Plant.Controls.Controller.Target = {'FC1.TpenAvg';'FC1.deltaTStack';'FC1.Steam2Carbon'};

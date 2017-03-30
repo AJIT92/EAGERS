@@ -5,9 +5,7 @@ function Out = Oxidizer(t,Y, Inlet,block,string1)
 % Two (2) outlets: Flow out and pressure at the inlet
 % Many (2+n) states: Outlet Temperature, Species, Inlet Pressure
 global Ru Tags
-Y = Y.*block.Scale;
 Pin = Y(end);
-
 %merge flows
 Hin = 0;
 NetIn =[];
@@ -97,6 +95,5 @@ elseif strcmp(string1,'dY')
         dY(1+i) = ((ReactMix.(block.spec{i})/ReactFlow-Y(i+1)/FlowOut)*FlowOut + FlowError*max(0,Y(i+1))/FlowOut)*Ru*Y(1)/(block.Vol*Pin);%change in stored mass of each species
     end
     dY(2+i) = (ReactFlow - NetFlow(ActualOut))*Ru*Y(1)/(block.Vol); %change in Pressure
-    dY = dY./block.Scale;
     Out = dY;
 end

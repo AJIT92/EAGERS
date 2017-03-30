@@ -29,30 +29,21 @@ Plant.Components.EC1.ClosedCathode = 0; %0 means air or some excess flow of O2 i
 Plant.Components.EC1.CoolingStream = 'none'; % choices are 'none' or 'cathode'. Determines which flow is increased to reach desired temperature gradient.
 Plant.Components.EC1.PressureRatio = 1.2;
 Plant.Components.EC1.columns = 5;
-Plant.Components.EC1.rows = 1;
+Plant.Components.EC1.rows = 5;
 Plant.Components.EC1.RatedStack_kW = 300; %Nominal Stack Power in kW
-Plant.Components.EC1.Steam = Steam; %initial fuel composition at inlet
-Plant.Components.EC1.Oxidant = Air; %initial oxidant composition if there is a dilution on the anode side added to the O2 production (temperature regualtion)
+Plant.Components.EC1.Flow1Spec = Steam; %initial fuel composition at inlet
+Plant.Components.EC1.Flow2Spec = Air; %initial oxidant composition if there is a dilution on the anode side added to the O2 production (temperature regualtion)
 Plant.Components.EC1.L_Cell= .1;  %Cell length in meters
 Plant.Components.EC1.W_Cell = .1;  %Cell Width in meters  
-if Plant.Components.EC1.ClosedCathode
-    Plant.Components.EC1.Cells = ceil(Plant.Components.EC1.RatedStack_kW*1000/(1.3*1e4*Plant.Components.EC1.L_Cell*Plant.Components.EC1.W_Cell)); %# of cells in stack (assumes 1 A/cm^2) corrected later
-else
-    Plant.Components.EC1.DesignTarget = 'power density'; %options are 'power density', 'voltage', or 'current density' (A/cm^2)
-    Plant.Components.EC1.DesignTargetValue = 2000; % power density specified in mW/cm^2, voltage specified in V/cell, current density specified in A/cm^2
-    if strcmp(Plant.Components.EC1.DesignTarget,'power density')
-        Plant.Components.EC1.Cells = ceil(Plant.Components.EC1.RatedStack_kW*100/(Plant.Components.EC1.L_Cell*Plant.Components.EC1.W_Cell*Plant.Components.EC1.DesignTargetValue)); %# of cells in stack
-    elseif strcmp(Plant.Components.EC1.DesignTarget,'current density')
-        Plant.Components.EC1.Cells = ceil(Plant.Components.EC1.RatedStack_kW*1000/(1.3*1e4*Plant.Components.EC1.L_Cell*Plant.Components.EC1.W_Cell*Plant.Components.EC1.DesignTargetValue)); %# of cells in stack (assumes voltage of 1.3)
-    elseif strcmp(Plant.Components.EC1.DesignTarget,'voltage')
-        Plant.Components.EC1.Cells = ceil(Plant.Components.EC1.RatedStack_kW*1000/(Plant.Components.EC1.DesignTargetValue*1e4*Plant.Components.EC1.L_Cell*Plant.Components.EC1.W_Cell)); %# of cells in stack (assumes 1 A/cm^2) corrected later
-    end 
+if ~Plant.Components.EC1.ClosedCathode
+    Plant.Components.EC1.Specification = 'power density';%options are 'cells', 'power density', 'voltage', or 'current density'. Note: careful when specifying cells that it arrives at a feasible power density
+    Plant.Components.EC1.SpecificationValue = 2000; % power density specified in mW/cm^2, voltage specified in V/cell, current density specified in A/cm^2
 end
 Plant.Components.EC1.deltaTStack = 50; %temperature difference from cathode inlet to cathode outlet
 Plant.Components.EC1.TpenAvg = 1023;% 750 C, average electrolyte operating temperature
 Plant.Components.EC1.H2O_Utilization =.85; %H2O utilization (net steam consumed/ steam supply)
-Plant.Components.EC1.AnodePdrop = 2; %design anode pressure drop
-Plant.Components.EC1.CathodePdrop = 10; %Design cathode pressure drop
+Plant.Components.EC1.Flow1Pdrop = 2; %design anode pressure drop
+Plant.Components.EC1.Flow2Pdrop = 10; %Design cathode pressure drop
 Plant.Components.EC1.connections = {'Controller.Current';'SteamSource.Outlet';'AirSource.Outlet';'';'';};
 Plant.Components.EC1.TagInf = {'Power';'Current';'Voltage';'PENavgT';'StackdeltaT';'H2Outilization';'TcathOut';'nCurrent';'nVoltage'}; %Tags to record at each step
 Plant.Components.EC1.TagFinal = {'Power';'Current';'Voltage';'PENavgT';'StackdeltaT';'H2Outilization';'TcathOut';'nCurrent';'nVoltage'}; %Tags to record at the final step
@@ -60,15 +51,15 @@ Plant.Components.EC1.TagFinal = {'Power';'Current';'Voltage';'PENavgT';'Stackdel
 Plant.Controls.Controller.type = 'ControlECstack';
 Plant.Controls.Controller.name = 'Controller';
 Plant.Controls.Controller.Target = {'EC1.TpenAvg';'EC1.deltaTStack';};
-Plant.Controls.Controller.Steam = 'EC1.Steam';
+Plant.Controls.Controller.Steam = 'EC1.Flow1Spec';
 Plant.Controls.Controller.Cells = 'EC1.Cells';
 Plant.Controls.Controller.Utilization = 'EC1.H2O_Utilization';
 Plant.Controls.Controller.SteamTemperature = 973;
-Plant.Controls.Controller.InitConditions = {'EC1.AnodeIn.IC';'EC1.Current';}; %oxidant flow rate, net current
-Plant.Controls.Controller.Gain = [1e-3;1e-2];
-Plant.Controls.Controller.PropGain = [0;1];
+Plant.Controls.Controller.InitConditions = {'EC1.Flow2.IC';'EC1.Current';}; %oxidant flow rate, net current
+Plant.Controls.Controller.Gain = [2e-4;];
+Plant.Controls.Controller.PropGain = [3];
 Plant.Controls.Controller.TagInf = {'OxidantFlow';'OxidantTemp';'Tsteam';'SteamFlow';'Current';};
-Plant.Controls.Controller.connections = {'EC1.MeasureTanodeOut';'Controller.OxidantTemp';'EC1.MeasureTpen';'EC1.MeasureVoltage';};
+Plant.Controls.Controller.connections = {'EC1.MeasureTflow2';'Controller.OxidantTemp';'EC1.MeasureVoltage';'EC1.MeasureTpen';};
 
 Plant.Scope = {'Controller.OxidantFlow';'Controller.Current';'Controller.OxidantTemp';'EC1.Voltage';}; %must be in TagInf of the corresponding block to work here
 Plant.Plot = [Plant.Scope;{'EC1.StackdeltaT';'EC1.PENavgT';'EC1.TcathOut';}];

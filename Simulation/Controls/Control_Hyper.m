@@ -4,7 +4,6 @@ function Out = Control_Hyper(t,Y, Inlet,block,string1)
 % Three (3) outlets: Generator Power, fuel flow rate to combustor, fuel flow rate to oxidizer, and leakage valve postion
 % Four (4) states: desired RPM, generator power, molar fuel flow and compressor leakage valve position
 global Tags 
-Y = Y.*block.Scale;
 SteadyPower = Inlet.WTurbine - Inlet.WCompressor;
 PowerSet = PowerDemandLookup(t);
 P_Gain = block.PropGain.*block.Scale;

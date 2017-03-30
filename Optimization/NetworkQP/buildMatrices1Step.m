@@ -1,194 +1,265 @@
-function QPall = buildMatrices1Step(dt)
-
-%this function creates the a seperate set of QP matrices for each output
-%(electric & heating together, cooling, steam etc)
-% It makes a seperate QP matrix for each time interval in the optimization horizon if dt is not constant
-% if stor is true then energy storage is considered
-
-global Model_dir Plant
-
-nodes = Plant.nodalVar.nodes;
-genNames = Plant.nodalVar.genNames;
-genStates = Plant.nodalVar.genStates; 
-
-
+function QP = buildMatrices1Step
+%builds constant matrices for step-by-step optimization
+%similar to multi-step except:
+%energy storage looks like a generator with 1 state (can be pos or neg)
+%no ramping constraints
+%Fit A includes energy storage and uses the fit with zero y-intercept
+%Fit B does not include energy storage and uses non-zero intercept
+%Demands, upper/lower bounds, and utility costs must updated prior to optimization
+global Plant 
+Op = 'OpMatB';
 nG = length(Plant.Generator);
-Outs = Plant.optimoptions.Outputs;
-seq = 1;
+nL = length(Plant.subNet.lineNames);
 
+Organize.States = cell(1,nG);
+Organize.Equalities = cell(1,nG);
+Organize.Inequalities = cell(1,nG);
+Organize.StorageEquality = zeros(1,nG); %row of Aeq coresponding to energy balance that includes this storage device (expected storage output shows up as negative in beq)
+Organize.Dispatchable = zeros(1,nG);
+QP.organize = cell(1,nG+nL);
+QP.constCost = zeros(1,nG);
+
+networkNames = fieldnames(Plant.Network);
+networkNames = networkNames(~strcmp('name',networkNames));
+networkNames = networkNames(~strcmp('Equipment',networkNames));
+%% First organize the order of states (set cost, and bounds: H, f, lb, ub)
+% states for each generator/storage
+% states for each transmission line/pipe 
+H = []; f = []; lb =[]; ub = [];
+xL = 0;
 for i = 1:1:nG
-    genNames(i,1) = {Plant.Generator(i).Name};
-end
-nodes = length(Plant.Network);
-
-
-while seq<=length(Outs)
-    xL = 0; %number of states
-    req = 1; % row index of the Aeq matrix and beq vector
-    r = 0; % row index of the A matrix & b vector
-    if strcmp('E',Outs{seq})
-        Organize.E.Demand = {'beq',1};
-        include = {'CHP Generator', 'Electric Generator'};
-    end
-
-    thisSeq = zeros(nG,1);
-    stor = zeros(1,nG);
-    utility = zeros(1,nG);
-    Hratio = zeros(1,nG);
-    renew = zeros(1,nG);
-    QP.organize = cell(1,nG);
-    
-    for i = 1:1:nodes
-        gen = Plant.Network(i).gen;
-        for j = 1:1:length(gen)
-            s = strfind(gen{j},'.');
-            genName = gen{j}(s+1:end);
-            I = find(strcmp(genName,genNames),1,'first');
-            states = Plant.Generator(I).OpMatB.states;
-            statesIndex = genStates{i,j};
-        %% identify system type
-            if ismember(Plant.Generator(I).Type,include)
-                if ismember(Plant.Generator(I).Type,include)
-                    thisSeq(I) = I;
-                    if strcmp(Plant.Generator(I).Type,'CHP Generator')
-                        Hratio(I) = Plant.Generator(I).OpMatB.output.H;
-                    end
-                end
-            elseif strcmp(Plant.Generator(I).Type,'Utility')
-                if isfield(Plant.Generator(I).OpMatB.output,Outs{seq}) 
-                    utility(I) = I;
-                end
-            elseif isfield(Plant.Generator(I).OpMatB,'Stor')
-                if isfield(Plant.Generator(I).OpMatB.output,Outs{seq})
-                    stor(I) = I; %storage in this seq
-                end
-            elseif strcmp('E',Outs{seq}) && strcmp(Plant.Generator(I).Source,'Renewable')
-                renew(I) = I;
+    Gen = Plant.Generator(i).(Op);
+    s = length(Gen.states);%generator with multiple states
+    if s>0
+        if ~isempty(strfind(Plant.Generator(i).Type,'Storage'))
+            QP.organize{1,i} = xL+1; % Storage treated as generator with 1 state
+            Organize.States(i)= {xL+1};
+            H(end+1) = 0;
+            f(end+1) = 0;
+            lb(end+1) = -Gen.Ramp.b(1);
+            ub(end+1) = Gen.Ramp.b(2);
+            xL = xL + 1;
+        else
+            QP.organize{1,i} = xL+1:xL+s; %output is sum of multiple states at ech time step
+            Organize.States(i)= {xL+1:xL+s};
+            for k = 1:1:s
+                H(end+1) = Gen.(Gen.states{k}).H;
+                f(end+1) = Gen.(Gen.states{k}).f;
+                lb(end+1) = Gen.(Gen.states{k}).lb;
+                ub(end+1) = Gen.(Gen.states{k}).ub;
             end
-
-            Organize.(Outs{seq}).IC(I) = 0;
-            Organize.(Outs{seq}).States(I) ={''}; 
-            Organize.(Outs{seq}).Equalities(I) = {[]};
-            Organize.(Outs{seq}).Inequalities(I) = {[]};
-            Gen = Plant.Generator(I).OpMatB;
-            if thisSeq(I) || utility(I)
-                nX = length(Gen.states);
-                if isfield(Gen,'link') && isfield(Gen.link,'beq') %not really using this anymore                 
-                    neq = length(Gen.link.beq);
-                    Organize.(Outs{seq}).Equalities(I) = {[]}; %associated with multiple generators, so leaving blank
-                    req = req + neq;
-                end
-            elseif stor(I)
-                nX =1; %only 1 state for storage in the 1-step optimization
-            else nX = []; 
-            end
-            if ~isempty(nX) 
-                Organize.(Outs{seq}).States(I) = {xL+1:xL+nX}; 
-                QP.organize{I} = linspace(xL+1,xL+nX,nX);%generator with one or multiple states; 
-                xL = xL + nX;
-            end
-        end 
-    end
-
-    
-    thisSeq = nonzeros(thisSeq)';
-    utility = nonzeros(utility)';
-    stor = nonzeros(stor)';
-    renew = nonzeros(renew)';
-    CHPindex = nonzeros((1:nG).*(Hratio>0))';
-    Organize.(Outs{seq}).thisSeq = thisSeq;
-    Organize.(Outs{seq}).stor = stor;
-    Organize.(Outs{seq}).utility = utility;
-    Organize.(Outs{seq}).renew = renew;
-    Organize.(Outs{seq}).CHPindex = CHPindex;
-    Organize.(Outs{seq}).Hratio = nonzeros(Hratio)';
-    
-    
-    %% build matrices
-    QP.f = zeros(xL,1);
-    QP.Aeq = zeros(req,xL);
-    QP.beq = zeros(req,1);
-    QP.A = zeros(r,xL);
-    QP.b = zeros(r,1);
-    QP.lb = zeros(xL,1);
-    QP.ub = inf*ones(xL,1);%if a state has now bound, then the upper bound is infinite
-    for tS = 1:1:length(dt)
-        H = zeros(xL,1);%QP.H needs to be in the loop so that is doesn't change from a diagonal to a vector every other timestep
-        for i = 1:1:nodes
-            gen = Plant.Network(i).gen;
-            for j = 1:1:length(gen)
-                s = strfind(gen{j},'.');
-                genName = gen{j}(s+1:end);
-                I = find(strcmp(genName,genNames),1,'first');
-                statesIndex = genStates{i,j};
-                if ismember(I,[thisSeq, utility]) 
-                    Gen = Plant.Generator(I).OpMatB;
-                    states = Gen.states;
-                    k = Organize.(Outs{seq}).States{I};
-                    %gOuts = fieldnames(Gen.output); %use this when set up for heating
-                    gOuts = fieldnames(Plant.Generator(3).OpMatB.output); %Placeholder to prevent running 'H'
-                    for p = 1:1:length(gOuts) %load all outputs into the correct equality or inequality equation
-                        if p<=1
-                            mat = Organize.(gOuts{p}).Demand{1};
-                            index = Organize.(gOuts{p}).Demand{2};
-                            if strcmp(mat,'beq')
-                                mat = 'Aeq';
-                            else mat = 'A';
-                            end
-                            QP.(mat)(index,k) = Gen.output.(gOuts{p});
-                            if strcmp(Plant.Generator(I).Type,'Utility') && length(k) ==2 %utility with sellback
-                                QP.(mat)(index,k(2)) = -Gen.output.(gOuts{p});
-                            end
-                        end 
-                    end
-                    %% Generally have done away with link states for non storage
-                    if isfield(Gen,'link')  %link is a field if there is more than one state
-                        if isfield(Gen.link,'eq')
-                            req = Organize.(Outs{seq}).Equalities{I};
-                            QP.Aeq(req, k) = Gen.link.eq;
-                            QP.beq(req) = Gen.link.beq;
-                        end
-                        if isfield(Gen.link,'ineq')
-                            r = Organize.(Outs{seq}).Inequalities{I};
-                            QP.A(r, k) = Gen.link.ineq;
-                            QP.b(r) = Gen.link.bineq;
-                        end
-                    end
-
-                    %% costs and bounds, each state has 1 value
-                    k = Organize.(Outs{seq}).States{I}(1);% first index for the states of the x vector in C = x'Hx+f'x
-                    for j = 1:1:length(states)
-                        H(k+j-1) = Gen.(states{j}).H.*dt(tS); %costs scaled by length of time interval
-                        QP.f(k+j-1) = Gen.(states{j}).f.*dt(tS); %costs scaled by length of time interval
-                        QP.lb(k+j-1) = Gen.(states{j}).lb;
-                        QP.ub(k+j-1) = Gen.(states{j}).ub;
-                    end
-                elseif ismember(I,[stor]) %% add storage (as single state for power output, not SOC)
-                    Gen = Plant.Generator(I).OpMatB;
-                    k = Organize.(Outs{seq}).States{I}(1);% first index for the states of the x vector in C = x'Hx+f'x
-                    StorOut = fieldnames(Gen.output);
-                    for p = 1:1:length(StorOut)
-                        mat = Organize.(StorOut{p}).Demand{1};
-                        index = Organize.(StorOut{p}).Demand{2};
-                        if strcmp(mat,'beq')
-                            mat = 'Aeq';
-                        else mat = 'A';
-                        end
-                        QP.(mat)(index,k) = 1;
-                    end
-                    %% bounds
-                    QP.ub(k) = Gen.Ramp.b(2); % peak power production (peak discharge)
-                    QP.lb(k) = -Gen.Ramp.b(1); % peak charging (negative power)
-                    %% Costs are figured out during the update stage
+            xL = xL + s;
+            if isempty(strfind(Plant.Generator(i).Type,'Utility'))
+                Organize.Dispatchable(i) = 1;
+                if isfield(Plant.Generator(i).(Op),'constCost') 
+                     QP.constCost(i) = Plant.Generator(i).OpMatB.constCost;
                 end
             end
-        end 
-        QP.H = diag(H);
-        if isfield(Organize,'H') && Plant.optimoptions.excessHeat && ~strcmp(Outs{seq},'C')
-            QP.A(Organize.H.Demand{2},:) = -QP.A(Organize.H.Demand{2},:);
         end
-        QPall.(Outs{seq})(tS) = QP;
     end
-    seq = seq+1;
 end
-QPall.Organize = Organize;      
+for i = 1:1:nL % 3 states for each line (state of the line and penalty term in each direction)
+    QP.organize{1,nG+i} = xL+1; %line state 
+    Organize.States(nG+i)= {[xL+1, xL+2, xL+3]};
+    H(end+1:end+3) = [0 0 0];
+    f(end+1:end+3) = [0 0 0];
+    lb(end+1:end+3) = [-Plant.subNet.lineLimit(i),0,0];
+    ub(end+1:end+3) = [Plant.subNet.lineLimit(i), Plant.subNet.lineLimit(i)*(1-Plant.subNet.lineEff(i)), Plant.subNet.lineLimit(i)*(1-Plant.subNet.lineEff(i))];
+    xL = xL + 3;
+end
+
+
+%% Next organize equality equations (Aeq, and Demand to locate beq later)
+% Electric energy balance @ each Electric subNet node  at t = 1
+% Heat balance @ each DistricHeat subNet node at t = 1
+% Cooling balance @ each DistrictCool subNet node at t = 1
+% Any generator link equalities (linking states within a generator)
+req = 0; % row index of the Aeq matrix and beq vector
+beq = [];
+
+% The following puts together the energy balance equations
+% 1 equation for each subNet node
+% Nodes were agregated if their line efficiencies were 1
+QP.excessHeat = Plant.optimoptions.excessHeat;
+for net = 1:1:length(networkNames)
+    n = length(Plant.subNet.(networkNames{net}));
+    Organize.Balance.(networkNames{net}) = [];
+    for i = 1:1:n
+        if strcmp(networkNames{net},'DistrictHeat') && Plant.optimoptions.excessHeat == 1
+            QP.excessHeat =1;
+            %skip and do in inequality section
+        else
+            req = req+1;%there is an energy balance at this node
+            Organize.Balance.(networkNames{net})(n) = req;
+            %%identify generators at this node
+            genI = Plant.subNet.(networkNames{net})(i).Equipment;
+            for j = 1:1:length(genI)
+                states = Organize.States{genI(j)};%states associated with gerator i
+                if strcmp(networkNames{net},'Electrical') && isfield(Plant.Generator(genI(j)).(Op).output,'E')
+                    if strcmp(Plant.Generator(genI(j)).Type,'Electric Storage')
+                        Aeq(req,states) = 1; %storage converted to "generator"
+                        Organize.StorageEquality(genI(j)) = req;
+                    else
+                        Aeq(req,states) = Plant.Generator(genI(j)).(Op).output.E;
+                    end
+                elseif strcmp(networkNames{net},'DistrictHeat') && isfield(Plant.Generator(genI(j)).(Op).output,'H')
+                    if strcmp(Plant.Generator(genI(j)).Type,'Thermal Storage')
+                        Aeq(req,states) = 1; %storage converted to "generator"
+                        Organize.StorageEquality(genI(j)) = req;
+                    else
+                        Aeq(req,states) = Plant.Generator(genI(j)).(Op).output.H;
+                    end
+                elseif strcmp(networkNames{net},'DistrictCool') && isfield(Plant.Generator(genI(j)).(Op).output,'C')
+                    if strcmp(Plant.Generator(genI(j)).Type,'Thermal Storage')
+                        Aeq(req,states) = 1; %storage converted to "generator"
+                        Organize.StorageEquality(genI(j)) = req;
+                    else
+                        Aeq(req,states) = Plant.Generator(genI(j)).(Op).output.C;
+                    end
+                end
+            end
+            %%identify lines coming in and out
+            connect = Plant.subNet.(networkNames{net})(i).connections;
+            for j = 1:1:length(connect)
+                I = [];
+                while isempty(I)
+                    nName = Plant.subNet.(networkNames{net})(i).nodes(1); %name of current subnet node
+                    I = find(strcmp(strcat(nName,'_',networkNames{net},'_',connect{j}),Plant.subNet.lineNames),1,'first');
+                    if isempty(I)
+                        I = find(strcmp(strcat(connect{j},'_',networkNames{net},'_',nName),Plant.subNet.lineNames),1,'first');
+                        if~isempty(I)
+                            dir = -1; %reverse direction
+                        else dis('error: line does not exist')
+                        end
+                    else
+                        dir = 1; %forward direction
+                    end
+                end
+                linestates = Organize.States{nG+I};
+                if dir ==1
+                    Aeq(req,linestates) = [-1,0,-1]; %forward direction A-->B, is positive, thus positive transmission is power leaving the node, the penalty from b->a is power not seen at a
+                else
+                    Aeq(req,linestates) = [1,-1,0];%reverse direction B-->A, is positive, thus positive power is power entering the node, the penalty from a->b is power not seen at b
+                end
+            end
+            %%note any demands at this node
+            load = Plant.subNet.(networkNames{net})(i).Load;
+            for j = 1:1:length(load)
+                Organize.Demand.(networkNames{net})(load(j)) = req;
+            end
+        end
+    end
+end
+
+%link is a field if there is more than one state and the states are linked by an inequality or an equality
+for i = 1:1:nG
+    if isfield(Plant.Generator(i).(Op),'link') && isfield(Plant.Generator(i).(Op).link,'eq')
+        [m,n] = size(Plant.Generator(i).(Op).link.eq);
+        states = Organize.States{i};%states associated with gerator i
+        for k = 1:1:m
+            Aeq(req+k,states) = Plant.Generator(i).(Op).link.eq(k,:);
+            beq(req+k) = Plant.Generator(i).(Op).link.beq(k);
+        end
+        if m==1
+            Organize.Equalities(i) = {req+1}; 
+        else
+            Organize.Equalities(i) = {req+1:req+m}; 
+        end
+        req = req+m;
+    end
+end
+
+%% Organize inequalities
+% Distric heating energy inequalities (inequality because heat can be rejected)
+% 2 constraints for each transmission line
+
+r = 0; % row index of the A matrix & b vector
+A = [];
+%Distric heating energy inequalities (inequality because heat can be rejected)
+for net = 1:1:length(networkNames)
+    n = length(Plant.subNet.(networkNames{net}));
+    Organize.Imbalance.(networkNames{net}) = [];
+    for i = 1:1:n
+        if strcmp(networkNames{net},'DistrictHeat') && Plant.optimoptions.excessHeat == 1
+            r = r+1;%there is an energy balance at this node
+            Organize.Imbalance.(networkNames{net})(n) = r;
+            %%identify generators at this node
+            genI = Plant.subNet.(networkNames{net})(i).Equipment;
+            for j = 1:1:length(genI)
+                states = Organize.States{genI(j)};%states associated with gerator i
+                if strcmp(networkNames{net},'DistrictHeat') && isfield(Plant.Generator(genI(j)).(Op).output,'H')
+                    if strcmp(Plant.Generator(genI(j)).Type,'Thermal Storage')
+                        A(r,states) = 1;
+                    else
+                        A(r,states) = Plant.Generator(genI(j)).(Op).output.H;
+                    end
+                end
+            end
+            %%identify lines coming in and out
+            connect = Plant.subNet.(networkNames{net})(i).connections;
+            for j = 1:1:length(connect)
+                I = [];
+                while isempty(I)
+                    nName = Plant.subNet.(networkNames{net})(i).nodes(1); %name of current subnet node
+                    I = find(strcmp(strcat(nName,'_',networkNames{net},'_',connect{j}),Plant.subNet.lineNames),1,'first');
+                    if isempty(I)
+                        I = find(strcmp(strcat(connect{j},'_',networkNames{net},'_',nName),Plant.subNet.lineNames),1,'first');
+                        if~isempty(I)
+                            dir = -1; %reverse direction
+                        else dis('error: line does not exist')
+                        end
+                    else
+                        dir = 1; %forward direction
+                    end
+                end
+                linestates = Organize.States{nG+I};
+                if dir ==1
+                    A(r,linestates) = [1,-1,0]; %forward direction A-->B, is positive
+                else
+                    A(r,linestates) = [-1,0,-1];%reverse direction B-->A, is positive
+                end
+            end
+            %%note any demands at this node
+            load = Plant.subNet.(networkNames{net})(i).Load;
+            for j = 1:1:length(load)
+                Organize.Demand.(networkNames{net})(load(j)) = r;
+            end
+        end
+    end
+end
+
+%Transmission line inequalites (penalty terms)
+for i = 1:1:length(Plant.subNet.lineNames)
+    linestates = Organize.States{nG+i};
+    A(r+1,linestates) = [(1-Plant.subNet.lineEff(i)), -1, 0];% Pab*(1-efficiency) < penalty a to b
+    A(r+2,linestates) = [-(1-Plant.subNet.lineEff(i)), 0, -1];% -Pab*(1-efficiency) < penalty b to a
+    Organize.Transmission(i) = {strcat('[',num2str(r+1),':',num2str(r+2),']')}; 
+    r = r+2;
+end
+
+%% Finally, build out QP matrices
+QP.H = diag(H);
+QP.f =f';
+QP.lb = lb';
+QP.ub = ub';
+
+[m,n] = size(Aeq);
+if req>m || xL>n
+    Aeq(req,xL) = 0;%make sure Aeq is the right size
+end
+if req>length(beq)
+    beq(req,1) = 0; %make sure beq is the right length
+end
+QP.Aeq = Aeq;
+QP.beq = beq;
+
+if ~isempty(A)
+    [m,n] = size(A);
+    if m<r|| n<xL
+        A(r,xL) = 0;
+    end
+else A = zeros(r,xL);
+end
+QP.A = A;
+QP.b = zeros(r,1);
+QP.Organize = Organize; %indices (rows and columns) associated with each generator, allowing generators to be removed later

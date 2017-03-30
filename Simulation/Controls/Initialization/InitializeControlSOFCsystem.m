@@ -6,29 +6,29 @@ function block = InitializeControlSOFCsystem(varargin)
 global F
 block = varargin{1};
 if length(varargin)==1 %first initialization
-    block.IC = [1 1 1]; % inital condition
-    block.Scale = block.IC;
     block.description = {'Heater Bypass';'Blower Power';'Fuel Cell Current';};
     
     Target = zeros(length(block.Target),1);
     for j = 1:1:length(Target)
-        Target(j) = lookupVal(block.Target{j});
+        Target(j) = ComponentProperty(block.Target{j});
     end
     block.Target  = Target;
     
-    block.Cells = lookupVal(block.Cells);
-    block.Fuel = lookupVal(block.Fuel);
-    block.Utilization = lookupVal(block.Utilization);
-    Recirculation = lookupVal(block.InitialAnodeRecirc);
+    block.Cells = ComponentProperty(block.Cells);
+    block.Fuel = ComponentProperty(block.Fuel);
+    block.Utilization = ComponentProperty(block.Utilization);
+    Recirculation = ComponentProperty(block.InitialAnodeRecirc);
+
+    Bypass = ComponentProperty(block.InitConditions{1});
+    Blower = ComponentProperty(block.InitConditions{2});
+    BlowerMass = ComponentProperty('Blower.FlowDesign');
+    CathodeMass = NetFlow(ComponentProperty('FC1.Flow2Out.IC'))*28.84;
+    ComponentProperty('Blower.FlowDesign',CathodeMass);
+    Blower = Blower*CathodeMass/BlowerMass; %scale blower power
+    Current = sum(ComponentProperty(block.InitConditions{3}));
     
-    for j = 1:1:length(block.Scale)
-        block.Scale(j) = lookupVal(block.InitConditions{j});
-    end
-    initCurrent = block.Scale(3);
     
-    block.IC = [block.Scale(1);1;1;]; % inital condition
-    block.Scale = [1;block.Scale(2);block.Scale(3)];
-    FuelFlow = (block.Cells*initCurrent/(2*F*block.Utilization*(4*block.Fuel.CH4+block.Fuel.CO+block.Fuel.H2))/1000);
+    FuelFlow = (block.Cells*Current/(2*F*block.Utilization*(4*block.Fuel.CH4+block.Fuel.CO+block.Fuel.H2))/1000);
     if Recirculation > 0
         %use reciculation from 1st initialization to set 
         Steam2Carbon = block.Target(3);
@@ -43,12 +43,12 @@ if length(varargin)==1 %first initialization
             % Inlet = (Inlet + generated - consumed)*r  + New, thus inlet = New/(1-r) + (generated - consumed)*r/(1-r)
             while abs(error)>1e-6
                 COin = block.Fuel.CO*FuelFlow/(1-r) + (block.Fuel.CH4 - eWGS*(block.Fuel.CH4+block.Fuel.CO))*FuelFlow*r/(1-r);
-                Inlet.FuelMix.H2O = block.Fuel.H2O*FuelFlow/(1-r) + (block.Cells*initCurrent/(2*F*1000) - (block.Fuel.CH4 + (block.Fuel.CH4 + block.Fuel.CO)*eWGS)*FuelFlow)*r/(1-r);
+                Inlet.FuelMix.H2O = block.Fuel.H2O*FuelFlow/(1-r) + (block.Cells*Current/(2*F*1000) - (block.Fuel.CH4 + (block.Fuel.CH4 + block.Fuel.CO)*eWGS)*FuelFlow)*r/(1-r);
                 S2C = Inlet.FuelMix.H2O/(CH4 + 0.5*COin);
                 error = Steam2Carbon - S2C;
                 eWGS2 = eWGS+dWGS;
                 COin2 = block.Fuel.CO*FuelFlow/(1-r) + (block.Fuel.CH4 - eWGS2*(block.Fuel.CH4+block.Fuel.CO))*FuelFlow*r/(1-r);
-                H2Oin2 = block.Fuel.H2O*FuelFlow/(1-r) + (block.Cells*initCurrent/(2*F*1000) - (block.Fuel.CH4 + (block.Fuel.CH4 + block.Fuel.CO)*eWGS2)*FuelFlow)*r/(1-r);
+                H2Oin2 = block.Fuel.H2O*FuelFlow/(1-r) + (block.Cells*Current/(2*F*1000) - (block.Fuel.CH4 + (block.Fuel.CH4 + block.Fuel.CO)*eWGS2)*FuelFlow)*r/(1-r);
                 S2C2 = H2Oin2/(CH4 + 0.5*COin2);
                 dSdWGS = (S2C2 - S2C)/dWGS;
                 if dSdWGS ==0
@@ -62,26 +62,30 @@ if length(varargin)==1 %first initialization
         end
     end
     
-    block.PortNames = {'Hot','Cold','PEN_Temp','Voltage','HeaterBypass','Blower','Current','AnodeRecirc','FuelFlow'};
+    block.PortNames = {'Hot','Cold','Voltage','HeaterBypass','Blower','Current','AnodeRecirc','FuelFlow'};
     block.Hot.type = 'in';
     block.Hot.IC = block.Target(2)+.5*block.Target(1); 
     block.Cold.type = 'in';
     block.Cold.IC = block.Target(2)-.5*block.Target(1); 
-    block.PEN_Temp.type = 'in';
     block.Voltage.type = 'in';
     block.Voltage.IC = 0.85; 
     block.HeaterBypass.type = 'out';
-    block.HeaterBypass.IC = block.IC(1)*block.Scale(1);
+    block.HeaterBypass.IC = Bypass;
     block.Blower.type = 'out';
-    block.Blower.IC = block.IC(2)*block.Scale(2); 
+    block.Blower.IC = Blower; 
     block.Current.type = 'out';
-    block.Current.IC =  block.IC(3)*block.Scale(3);
+    block.Current.IC =  Current;
     block.AnodeRecirc.type = 'out';
     block.AnodeRecirc.IC = Recirculation;
     block.FuelFlow.type = 'out';
     block.FuelFlow.IC = FuelFlow;
     
     block.P_Difference = {};
+    
+    block.IC = [Bypass;1;]; % inital condition
+    block.Scale = [1;Blower;];
+%     block.IC = [Bypass;1;1;]; % inital condition
+%     block.Scale = [1;Blower;Current];
     
     for i = 1:1:length(block.PortNames)
         if length(block.connections)<i || isempty(block.connections{i})
@@ -95,35 +99,53 @@ if length(varargin)==1 %first initialization
             end
         end
     end
-%     blowPow = block.Blower.IC
 elseif length(varargin)==2 %% Have inlets connected, re-initialize
     Inlet = varargin{2};
+    PEN_Temperature = mean(ComponentProperty('FC1.T.Elec'));
+    blowerPower = ComponentProperty('Blower.NominalPower');
+    StackPower = PowerDemandLookup(0) + blowerPower;
+%     PowerError = (StackPower-block.Current.IC*Inlet.Voltage*block.Cells/1000)/StackPower;
+%     block.Current.IC = block.Current.IC*(1 + PowerError);
     
-    NetPower = PowerDemandLookup(0);
-    PowerError = (NetPower-block.Current.IC*Inlet.Voltage*block.Cells/1000)/NetPower;
-    block.Current.IC = block.Current.IC*(1 + PowerError);
+    block.Current.IC = StackPower*1000/(Inlet.Voltage*block.Cells);
+    averageT = (mean(Inlet.Hot)+mean(Inlet.Cold))/2; %average temperature of cathode
+    block.dT_cath_PEN = PEN_Temperature - averageT; %temperature differencce between cathode and PEN
+    TinletError = (block.Target(1) - (mean(Inlet.Cold) + .5*block.Target(2) + block.dT_cath_PEN))/block.Target(2);
     
-    averageT = mean(Inlet.PEN_Temp); %need to adjust either target temp of heat exchanger or deltaT target if heat exchanger is sizing automatically to hit a target temp
-    TavgError = (block.Target(1) - averageT)/block.Target(2);
-%     if Inlet.Cold<(block.Target(1) - 1.5*block.Target(2))
-%         Inlet.Cold  = block.Target(1) -.75*block.Target(2);
-%     end
     deltaT = (mean(Inlet.Hot)-mean(Inlet.Cold));
-    dTerror =(deltaT-block.Target(2))/block.Target(2);
+    dTerror =(deltaT-(block.Target(2)))/block.Target(2);
 
     Steam2Carbon = block.Target(3);
-%     dTerror
-%     TavgError
-%     if abs(dTerror)>.1
-%         block.Blower.IC = block.Blower.IC*(1+.5*dTerror); % change blower power to change flow rate
-%     else block.Blower.IC = block.Blower.IC*(1+dTerror)^2; % change blower power to change flow rate
-%     end
-%     blowPow = block.Blower.IC
     
+    %% adjust blower mass flow to get deltaT correct
+    blowerMassFlow = ComponentProperty('Blower.FlowDesign');
+    ComponentProperty('Blower.FlowDesign',blowerMassFlow*(1+.5*dTerror));
+    block.Blower.IC = blowerPower*(1+.5*dTerror);
+%     blower = block.Blower.IC
     %%if too cold, add more fuel, it will burn and more heat will be recovered
-    Utilization = block.Utilization*(1-0.05*TavgError)
-    block.Utilization = Utilization;
-%     block.HeaterBypass.IC = block.HeaterBypass.IC;
+%     Utilization = block.Utilization*(1-0.04*TavgError)
+%     block.Utilization = Utilization;
+    
+%     %% adjust heat exchanger effectiveness to control inlet temperature
+%     HXtarget = ComponentProperty('HX1.Effectiveness');
+%     HXtarget = min(0.96,HXtarget*(1 + .05*TavgError));
+%     ComponentProperty('HX1.Target',HXtarget);
+%     ComponentProperty('HX1.sizemethod','Effectiveness');
+    
+    %% adjust heat exchanger cold exit temperature to control FC inlet temperature
+    HXtarget = ComponentProperty('HX1.Target');
+    HXtarget = HXtarget + TinletError*block.Target(2);
+    ComponentProperty('HX1.Target',HXtarget);
+
+    %%adjust exit temperature to avoid energy feedback during iterations
+    Terror = (block.Target(1) - (averageT+block.dT_cath_PEN));
+    CathodeOut = ComponentProperty('FC1.Flow2Out.IC');
+    CathodeOut.T = CathodeOut.T + Terror;
+    ComponentProperty('FC1.Flow2Out.IC',CathodeOut);
+    AnodeOut = ComponentProperty('FC1.Flow1Out.IC');
+    AnodeOut.T = AnodeOut.T + Terror;
+    ComponentProperty('FC1.Flow1Out.IC',AnodeOut);
+
     
     FuelFlow = (block.Cells*block.Current.IC/(2*F*block.Utilization*(4*block.Fuel.CH4+block.Fuel.CO+block.Fuel.H2))/1000);
     block.FuelFlow.IC = FuelFlow;
@@ -148,33 +170,10 @@ elseif length(varargin)==2 %% Have inlets connected, re-initialize
         end
         block.AnodeRecirc.IC = r;
     end
-%     block.InitializeError = max(abs(TavgError),abs(dTerror)); 
-    block.InitializeError = abs(TavgError);
-    
-    block.Scale = [1, block.Blower.IC, block.Current.IC];
-    block.IC = [block.HeaterBypass.IC-TavgError*block.PropGain(1), 1-dTerror*block.PropGain(2),1-PowerError*block.PropGain(3)];
-end
-
-function const = lookupVal(initCond)
-global modelParam
-if ischar(initCond)
-    r = strfind(initCond,'.');
-    if ~isempty(r)
-        r = [r,length(initCond)+1];
-        A = modelParam.(initCond(1:r(1)-1));
-        for i = 2:1:length(r)
-            field = initCond(r(i-1)+1:r(i)-1);
-            A = A.(field);
-        end
-    else
-        A = modelParam.(initCond);
-    end
-    if isstruct(A) && isfield(A,'T')
-        const = NetFlow(A);
-    elseif length(A)>1
-        const  = sum(A);
-    else
-        const = A;
-    end
-else const  = initCond;
+    block.InitializeError = max(abs(TinletError),abs(dTerror)); 
+%     block.InitializeError = abs(TavgError);
+    block.Scale = [1; block.Blower.IC;];
+    block.IC = [block.HeaterBypass.IC-TinletError*block.PropGain(1); 1-dTerror*block.PropGain(2);];
+%     block.Scale = [1; block.Blower.IC; block.Current.IC];
+%     block.IC = [block.HeaterBypass.IC-TinletError*block.PropGain(1); 1-dTerror*block.PropGain(2);1-PowerError*block.PropGain(3);];
 end

@@ -20,7 +20,8 @@ if length(varargin)==1 %first initialization
     block.SteamTemperature = ComponentProperty(block.SteamTemperature);
     
     OxFlow = NetFlow(ComponentProperty(block.InitConditions{1})); % inital condition: oxidant flow rate, 
-    Current = sum(ComponentProperty(block.InitConditions{2}));% net current
+    a = ComponentProperty(block.InitConditions{2});
+    Current = sum(a.H2 + a.CO);% net current
     
     SteamFlow = (block.Cells*abs(Current)/(2*F*block.Utilization*block.Steam.H2O)/1000);
     

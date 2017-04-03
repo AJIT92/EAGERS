@@ -1,4 +1,4 @@
-function [Out,R] = equilib2D(InFlow,T,P,H2consume,Type,PercEquilib,guess)
+function [Out,R] = equilib2D(InFlow,T,P,H2consume,COconsume,Type,PercEquilib,guess)
 % performs a gradient search to find the minimum gibbs function value for
 % two simultaneous reactions (methane reforming and water gas shift)
 % tolerance is a relative tolence, so that it is more accurat if only a
@@ -15,25 +15,22 @@ spec = fieldnames(InFlow);
 spec = spec(~strcmp('T',spec));
 Out = InFlow; %handles all inert gases (not in specinterest list)
 for k = 1:1:n
-    XnP=0;
-    for i = 1:1:length(spec)
-        if ~ismember(spec{i},specInterest)
-            XnP = XnP + InFlow.(spec{i})(k);
-        else
-            g0.(specInterest{i}) = h.(specInterest{i})(k)-T(k).*s.(specInterest{i})(k);
-            Inlet.(specInterest{i}) = InFlow.(specInterest{i})(k);
-        end
+    for i = 1:1:length(specInterest)
+        g0.(specInterest{i}) = h.(specInterest{i})(k)-T(k).*s.(specInterest{i})(k);
     end
-    CH4max = min(Inlet.CH4,Inlet.H2O);
-    CH4min = -min(Inlet.CO,Inlet.H2);
+    for i = 1:1:length(spec)
+        Inlet.(spec{i}) = InFlow.(spec{i})(k);
+    end
+    CH4max = min(InFlow.CH4(k),InFlow.H2O(k));
+    CH4min = -min(InFlow.CO(k),InFlow.H2(k));
     Span1 = CH4max-CH4min;
     if ~isempty(guess)
         x0 = guess(k);
         R.CH4(k,1) = (Span1*x0+CH4min);
         
         X.CH4 = InFlow.CH4(k) - R.CH4(k);
-        X.CO = InFlow.CO(k) + R.CH4(k);
-        X.CO2 = InFlow.CO2(k);
+        X.CO = InFlow.CO(k) + R.CH4(k) - COconsume(k);
+        X.CO2 = InFlow.CO2(k) + COconsume(k);
         X.H2 = InFlow.H2(k) + 3*R.CH4(k) - H2consume(k);%hydrogen consumed
         X.H2O = InFlow.H2O(k) - R.CH4(k) + H2consume(k);% water produced
         if strcmp(Type,'MCFC')
@@ -44,7 +41,7 @@ for k = 1:1:n
                 X.(spec{i}) = InFlow.(spec{i})(k);
             end
         end
-        y0 = Newton1D(.5,X,-min(X.CO2,X.H2),min(X.H2O,X.CO(k)),T(k),P,specInterest,1e-6,'GibbVal');
+        y0 = Newton1D(.5,X,-min(X.CO2,X.H2),min(X.H2O,X.CO),T(k),P,specInterest,1e-6,'GibbVal');
         Tol = max(1e-10,x0*1e-7);
     else
         Tol = 1e-6;
@@ -52,12 +49,11 @@ for k = 1:1:n
         y0 = 0.5;
     end
 
-    [x,y] = Newton2D(Inlet,CH4min,CH4max,H2consume(k),Type,T(k),P,g0,XnP,x0,y0,Tol);
+    [x,y] = Newton2D(Inlet,CH4min,CH4max,H2consume(k),COconsume(k),Type,T(k),P,g0,x0,y0,Tol);
     R.CH4(k,1) = max(CH4min,PercEquilib*(Span1*x+CH4min)); %prevents a low % equilibrium from causing problems with enough H2 for electrochemistry
-    
     X.CH4 = InFlow.CH4(k) - R.CH4(k);
-    X.CO = InFlow.CO(k) + R.CH4(k);
-    X.CO2 = InFlow.CO2(k);
+    X.CO = InFlow.CO(k) + R.CH4(k) - COconsume(k);
+    X.CO2 = InFlow.CO2(k) + COconsume(k);
     X.H2 = InFlow.H2(k) + 3*R.CH4(k) - H2consume(k);%hydrogen consumed
     X.H2O = InFlow.H2O(k) - R.CH4(k) + H2consume(k);% water produced
     if strcmp(Type,'MCFC')
@@ -74,32 +70,17 @@ for k = 1:1:n
         y = Newton1D(y0,X,R_COmin,R_COmax ,T(k),P,specInterest,1e-6,'GibbVal');
     end
     R.WGS(k,1) = y*R_COmax + (1-y)*R_COmin;
-    OutFlow = FlowsOut(Inlet,R.CH4(k,1),R.WGS(k,1),H2consume(k),Type);
     
-    for i = 1:1:length(specInterest)
-        Out.(specInterest{i})(k) = OutFlow.(specInterest{i});
-    end
+    Out.CH4(k) = InFlow.CH4(k) - R.CH4(k);
+    Out.CO(k) = InFlow.CO(k) + R.CH4(k) - R.WGS(k) - COconsume(k);
+    Out.CO2(k) = InFlow.CO2(k) + R.WGS(k) + COconsume(k);
+    Out.H2(k) = InFlow.H2(k) + 3*R.CH4(k) + R.WGS(k) - H2consume(k);
+    Out.H2O(k) = InFlow.H2O(k) - R.CH4(k) - R.WGS(k) +H2consume(k);
 end
 Out.T = T;
 
-function X = FlowsOut(Inlet,CH4,WGS,H2consume,Type)
-X.CH4 = Inlet.CH4 - CH4;
-X.CO = Inlet.CO + CH4 - WGS;
-X.CO2 = Inlet.CO2 + WGS;
-X.H2 = Inlet.H2 + 3* CH4 + WGS - H2consume;%hydrogen consumed
-X.H2O = Inlet.H2O - CH4 - WGS + H2consume;% water produced
-if strcmp(Type,'MCFC')
-    X.CO2 = X.CO2 + H2consume; % CO2 brought over
-end
-spec = fieldnames(Inlet);
-specInterest = {'CH4','CO','CO2','H2','H2O'};
-for i = 1:1:length(spec)
-    if ~ismember(spec{i},specInterest)
-        X.(spec{i}) = Inlet.(spec{i});
-    end
-end
 
-function [x0,y0] = Newton2D(Inlet,R_CH4min,R_CH4max,H2consume,Type,T,P,g0,XnP,x0,y0,Tol)
+function [x0,y0] = Newton2D(Inlet,R_CH4min,R_CH4max,H2consume,COconsume,Type,T,P,g0,x0,y0,Tol)
 error = 1e-4;
 count = 0;
 while error>Tol && count<15
@@ -115,13 +96,24 @@ while error>Tol && count<15
     if y0+2*e_y>=1
         e_y = .1*(y0-1);
     end
-    G11 = GibbVal2(x0,y0,Inlet,R_CH4min,R_CH4max,H2consume,Type,T,P,g0,XnP);
+    %%G11
+    [X,WGS] = FlowOut(Inlet,x0,y0,R_CH4min,R_CH4max,H2consume,COconsume,Type);
+    G11 = GibbVal(X,WGS,T,P,g0);
     a = abs(G11);
-    G21 = GibbVal2(x0+e_x,y0,Inlet,R_CH4min,R_CH4max,H2consume,Type,T,P,g0,XnP)/a;
-    G31 = GibbVal2(x0+2*e_x,y0,Inlet,R_CH4min,R_CH4max,H2consume,Type,T,P,g0,XnP)/a;
-    G12 = GibbVal2(x0,y0+e_y,Inlet,R_CH4min,R_CH4max,H2consume,Type,T,P,g0,XnP)/a;
-    G13 = GibbVal2(x0,y0+2*e_y,Inlet,R_CH4min,R_CH4max,H2consume,Type,T,P,g0,XnP)/a;
-    G22 = GibbVal2(x0+e_x,y0+e_y,Inlet,R_CH4min,R_CH4max,H2consume,Type,T,P,g0,XnP)/a;
+    [X,WGS] = FlowOut(Inlet,x0+e_x,y0,R_CH4min,R_CH4max,H2consume,COconsume,Type);
+    G21 = GibbVal(X,WGS,T,P,g0)/a;
+    
+    [X,WGS] = FlowOut(Inlet,x0+2*e_x,y0,R_CH4min,R_CH4max,H2consume,COconsume,Type);
+    G31 = GibbVal(X,WGS,T,P,g0)/a;
+    
+    [X,WGS] = FlowOut(Inlet,x0,y0+e_y,R_CH4min,R_CH4max,H2consume,COconsume,Type);
+    G12 = GibbVal(X,WGS,T,P,g0)/a;
+    
+    [X,WGS] = FlowOut(Inlet,x0,y0+2*e_y,R_CH4min,R_CH4max,H2consume,COconsume,Type);
+    G13 = GibbVal(X,WGS,T,P,g0)/a;
+    
+    [X,WGS] = FlowOut(Inlet,x0+e_x,y0+e_y,R_CH4min,R_CH4max,H2consume,COconsume,Type);
+    G22 = GibbVal(X,WGS,T,P,g0)/a;
     G11 = G11/a;
     
     dGdx1 = (G21-G11)/e_x;
@@ -172,26 +164,25 @@ while error>Tol && count<15
     count = count+1;
 end
 
-function G = GibbVal2(x,y,Inlet,R_CH4min,R_CH4max,H2consume,Type,T,P,g0,XnP)
-global Ru
+function [X,WGS] = FlowOut(Inlet,x,y,R_CH4min,R_CH4max,H2consume,COconsume,Type)
 if isempty(R_CH4min)
     CH4 = x;
 else
     CH4 = x*R_CH4max + (1-x)*R_CH4min;
 end
-R_COmin = -min(Inlet.CO2,Inlet.H2 + 3*CH4 - H2consume);
-R_COmax = min((Inlet.H2O-CH4),(Inlet.CO+CH4));
+R_COmin = -min(Inlet.CO2-COconsume,Inlet.H2 + 3*CH4 - H2consume);
+R_COmax = min((Inlet.H2O-CH4),(Inlet.CO+CH4-COconsume));
 WGS = R_COmin + y*(R_COmax -R_COmin);
-X = FlowsOut(Inlet,CH4,WGS,H2consume,Type);
-G = 0;
-spec = fieldnames(g0);
-sumX = 0;
+%find exit species not considering WGS
+spec = fieldnames(Inlet);
 for i = 1:1:length(spec)
-    sumX = sumX + X.(spec{i});
+    X.(spec{i}) = Inlet.(spec{i});
 end
-sumX = sumX + XnP;
-for i = 1:1:length(spec)
-    G = G+X.(spec{i}).*(g0.(spec{i})/(Ru*T)+log(X.(spec{i})./sumX));
-    %     G = G+X.(spec{i})*(g0.(spec{i})/(Ru*T)+log(X.(spec{i})/sumX*P));
-    %     G = G+X.(spec{i})*(g0.(spec{i}) + Ru*T*log(P)+Ru*T*log(X.(spec{i})/sumX));
+X.CH4 = Inlet.CH4 - CH4;
+X.CO = Inlet.CO + CH4 - COconsume;
+X.CO2 = Inlet.CO2 + COconsume;
+X.H2 = Inlet.H2 + 3* CH4 - H2consume;%hydrogen consumed
+X.H2O = Inlet.H2O - CH4 + H2consume;% water produced
+if strcmp(Type,'MCFC')
+    X.CO2 = X.CO2 + H2consume; % CO2 brought over
 end

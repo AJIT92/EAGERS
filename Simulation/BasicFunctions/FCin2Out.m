@@ -47,18 +47,18 @@ for j= 1:1:length(Dir(1,:))
             if strcmp(spec{i},'CO2')
                 switch Type
                     case 'SOFC'
-                        Flow.Outlet.CO2(k,1) = Flow.Inlet.CO2(k)+R.WGS(k); %CO2 flow
+                        Flow.Outlet.CO2(k,1) = Flow.Inlet.CO2(k)+R.WGS(k) + Current.CO(k)/(2*F*1000); %CO2 flow
                     case 'MCFC'
-                        Flow.Outlet.CO2(k,1) = Flow.Inlet.CO2(k)+R.WGS(k) + Current(k)/(2*F*1000); %CO2 flow
+                        Flow.Outlet.CO2(k,1) = Flow.Inlet.CO2(k)+R.WGS(k) + Current.H2(k)/(2*F*1000) + 2*Current.CO(k)/(2*F*1000); %CO2 flow
                 end
             elseif strcmp(spec{i},'CH4')
                 Flow.Outlet.CH4(k,1) = Flow.Inlet.CH4(k)-R.CH4(k);%CH4 flow
             elseif strcmp(spec{i},'CO')
-                Flow.Outlet.CO(k,1) = Flow.Inlet.CO(k)+R.CH4(k)-R.WGS(k); %CO flow
+                Flow.Outlet.CO(k,1) = Flow.Inlet.CO(k)+R.CH4(k)-R.WGS(k) - Current.CO(k)/(2*F*1000); %CO flow
             elseif strcmp(spec{i},'H2')
-                Flow.Outlet.H2(k,1) = Flow.Inlet.H2(k)+3*R.CH4(k)+R.WGS(k) - Current(k)/(2*F*1000); %H2 flow
+                Flow.Outlet.H2(k,1) = Flow.Inlet.H2(k)+3*R.CH4(k)+R.WGS(k) - Current.H2(k)/(2*F*1000); %H2 flow
             elseif strcmp(spec{i},'H2O')
-                Flow.Outlet.H2O(k,1) = Flow.Inlet.H2O(k)-R.CH4(k)-R.WGS(k) + Current(k)/(2*F*1000); %H2O flow
+                Flow.Outlet.H2O(k,1) = Flow.Inlet.H2O(k)-R.CH4(k)-R.WGS(k) + Current.H2(k)/(2*F*1000); %H2O flow
             elseif ~strcmp(spec{i},'T')
                 Flow.Outlet.(spec{i})(k,1) = Flow.Inlet.(spec{i})(k);
             end
@@ -73,10 +73,10 @@ for j= 1:1:length(Dir(1,:))
                     case 'SOFC'
                         Flow.Outlet.CO2(k,1) = Flow.Inlet.CO2(k); %CO2 flow
                     case 'MCFC'
-                        Flow.Outlet.CO2(k,1) = Flow.Inlet.CO2(k) - Current(k)/(2*F*1000); %CO2 flow
+                        Flow.Outlet.CO2(k,1) = Flow.Inlet.CO2(k) - (Current.H2(k)+Current.CO(k))/(2*F*1000); %CO2 flow
                 end
             elseif strcmp(spec{i},'O2')
-                Flow.Outlet.O2(k,1) = Flow.Inlet.O2(k) - Current(k)/(4*F*1000); %O2 flow
+                Flow.Outlet.O2(k,1) = Flow.Inlet.O2(k) - (Current.H2(k)+Current.CO(k))/(4*F*1000); %O2 flow
             elseif ~strcmp(spec{i},'T')
                 Flow.Outlet.(spec{i})(k,1) = Flow.Inlet.(spec{i})(k);
             end

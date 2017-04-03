@@ -33,18 +33,18 @@ R.WGS = max([R.WGS,-Flow.Inlet.CO2,-(Flow.Inlet.H2+3*R.CH4)],[],2);
 %identify the target outflow that dY will converge to
 for i = 1:1:length(spec)
     if strcmp(spec{i},'CO2') 
-        Out.CO2 = (Flow.Inlet.CO2 + R.WGS); 
+        Out.CO2 = Flow.Inlet.CO2 + R.WGS + Current.CO/(2*F*1000); 
         if strcmp(block.FCtype,'MCFC')
-            Out.CO2 = Out.CO2 + Current/(2*F*1000);
+            Out.CO2 = Out.CO2 + (Current.H2+Current.CO)/(2*F*1000);
         end
     elseif strcmp(spec{i},'H2') 
-        Out.H2 = (Flow.Inlet.H2 + 3*R.CH4 + R.WGS - Current/(2*F*1000));
+        Out.H2 = (Flow.Inlet.H2 + 3*R.CH4 + R.WGS - Current.H2/(2*F*1000));
     elseif strcmp(spec{i},'H2O') 
-        Out.H2O = (Flow.Inlet.H2O - R.CH4 - R.WGS + Current/(2*F*1000)); 
+        Out.H2O = (Flow.Inlet.H2O - R.CH4 - R.WGS + Current.H2/(2*F*1000)); 
     elseif strcmp(spec{i},'CH4') 
         Out.CH4 = (Flow.Inlet.CH4 - R.CH4); 
     elseif strcmp(spec{i},'CO') 
-        Out.CO = (Flow.Inlet.CO + R.CH4 - R.WGS);  
+        Out.CO = (Flow.Inlet.CO + R.CH4 - R.WGS - Current.CO/(2*F*1000));  
     else
         Out.(spec{i}) = Flow.Inlet.(spec{i});  
     end

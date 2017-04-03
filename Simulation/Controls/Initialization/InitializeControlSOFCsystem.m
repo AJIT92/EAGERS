@@ -2,7 +2,8 @@ function block = InitializeControlSOFCsystem(varargin)
 % Controls for SOFC system with external reformer, control heat exchanger bypass, blower power, anode recirculation and fuel flow rate
 % Four (4) inlets: T hot, T cold, T average, Voltage
 % Five (5) outlets:  Heater bypass, blower power, fuel flow rate, current, anode recirculation
-% Three (3) states: Heater bypass, blower power, Current 
+% Two (2) states: Heater bypass, blower power
+%Need to add state for current back in to avoid fuel starvation during step changes
 global F
 block = varargin{1};
 if length(varargin)==1 %first initialization
@@ -25,7 +26,8 @@ if length(varargin)==1 %first initialization
     CathodeMass = NetFlow(ComponentProperty('FC1.Flow2Out.IC'))*28.84;
     ComponentProperty('Blower.FlowDesign',CathodeMass);
     Blower = Blower*CathodeMass/BlowerMass; %scale blower power
-    Current = sum(ComponentProperty(block.InitConditions{3}));
+    a = ComponentProperty(block.InitConditions{3});
+    Current = sum(a.H2 + a.CO);
     
     
     FuelFlow = (block.Cells*Current/(2*F*block.Utilization*(4*block.Fuel.CH4+block.Fuel.CO+block.Fuel.H2))/1000);

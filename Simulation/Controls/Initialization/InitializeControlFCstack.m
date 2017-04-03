@@ -2,7 +2,7 @@ function block = InitializeControlFCstack(varargin)
 % Controls for Fuel cell stack only, control air flow and inlet temperature and fuel flow rate, net current and anode recirculation
 % Four (4) inlets: T hot, T cold, T average, Voltage
 % Six (6) outlets: OxidentTemp, oxidant flow rate, fuel temp, fuel flow rate, current, anode recirculation
-% Two (2) states: OxidentTemp, oxidant flow rate, 
+% Two (2) states: OxidentTemp, oxidant flow rate  %% %Need to add state for current back in to avoid fuel starvation during step changes
 % if OxyFC: % Three (3) states: anode recirculation, Fuel flow rate, net current
 global F
 block = varargin{1};
@@ -22,7 +22,8 @@ if length(varargin)==1 %first initialization
     block.Cells = ComponentProperty(block.Cells);
     block.Fuel = ComponentProperty(block.Fuel);
 
-    Current = sum(ComponentProperty(block.InitConditions{3}));
+    a = ComponentProperty(block.InitConditions{3});
+    Current = sum(a.H2 + a.CO);%net current
     if isfield(block,'OxyFC')
         Recirculation = ComponentProperty(block.InitConditions{1});
         FuelFlow = NetFlow(ComponentProperty(block.InitConditions{2}));

@@ -1,5 +1,5 @@
 function Current = redistributeCurrent(Current,scale,Voltage,localR,SetVoltage)
-currentPercOfAvg = Current/sum(Current)*length(Current);
+currentPercOfAvg = Current/(sum(Current)/length(Current));
 dCurrent = (Voltage-SetVoltage)./localR.*currentPercOfAvg; %change in current to balance voltage
 if min(abs(Current./dCurrent))<1
     a = .5*min(abs(Current./dCurrent));%ensure dCurrent is never more than half of a step towards zero

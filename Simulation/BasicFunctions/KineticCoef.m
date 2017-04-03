@@ -1,9 +1,15 @@
-function [block,FuelMix, Anode,Reformer] = KineticCoef(block,Inlet,first)
+function [block,FuelMix, Flow1,Flow3] = KineticCoef(block,Inlet,first)
 %% find the kinetic coefficient which results in the net reforming determined by equilibrium
-
 global Ru F
-FuelMix = Inlet.Flow1;
-StackAnIn = Inlet.AnodeIn;
+if ~isstruct(block.Current)
+    a = block.Current;
+    block.Current = [];
+    block.Current.H2 = a;
+    block.Current.CO = 0*a;
+end
+H2consume = sum(block.Current.H2)/(2*F*1000);
+COconsume = sum(block.Current.CO)/(2*F*1000);
+FuelMix = Inlet.Mixed;
 Rnet.CH4 = sum(block.R_CH4);
 RCH4old =0;
 switch block.Reformer
@@ -15,12 +21,12 @@ switch block.Reformer
         X0guess = max(min(block.AnPercEquilib,(1-1e-5)),1e-5);
     case 'direct'
         CH4max = min(FuelMix.CH4,FuelMix.H2O);
-        CH4min = -min(FuelMix.CO,((FuelMix.H2 + FuelMix.CO - sum(block.Current)/(2*F*1000))/3)*3/4);
+        CH4min = -min(FuelMix.CO-COconsume,((FuelMix.H2 + FuelMix.CO - (H2consume+COconsume))/3)*3/4);
         X0guess = (sum(block.R_CH4)/block.AnPercEquilib - CH4min)/(CH4max -CH4min);
         X0guess = max(min(X0guess,(1-1e-5)),1e-5);
     case 'external'
         CH4max = min((1-block.RefPerc)*FuelMix.CH4,FuelMix.H2O-1.8*block.RefPerc*FuelMix.CH4);
-        CH4min = -min(FuelMix.CO+.2*block.RefPerc*FuelMix.CH4,((FuelMix.H2 + FuelMix.CO + 4*block.RefPerc*FuelMix.CH4 - sum(block.Current)/(2*F*1000))/3)*3/4);
+        CH4min = -min(FuelMix.CO+.2*block.RefPerc*FuelMix.CH4,((FuelMix.H2 + FuelMix.CO + 4*block.RefPerc*FuelMix.CH4 - (H2consume+COconsume))/3)*3/4);
         X0guess = (sum(block.R_CH4)/block.AnPercEquilib - CH4min)/(CH4max -CH4min);
         X0guess = max(min(X0guess,(1-1e-5)),1e-5);
 end
@@ -30,7 +36,7 @@ count = 0;
 Tol = 1e-3;
 while abs((Rnet.CH4-RCH4old)/Rnet.CH4)>Tol% && (FC.Recirc.Anode>0 || count==0)
     RCH4old = Rnet.CH4;
-    AnOutlet.T = mean(block.T.Anode(block.Flow1Dir(:,end)));
+    AnOutlet.T = mean(block.T.Flow1(block.Flow1Dir(:,end)));
     switch block.Reformer
         case 'external'
             AnInlet = FuelMix;
@@ -39,40 +45,40 @@ while abs((Rnet.CH4-RCH4old)/Rnet.CH4)>Tol% && (FC.Recirc.Anode>0 || count==0)
             AnInlet.CO2 = (FuelMix.CO2 + 0.8*block.RefPerc*FuelMix.CH4);
             AnInlet.H2 = (FuelMix.H2 + 3.8*block.RefPerc*FuelMix.CH4);
             AnInlet.H2O = (FuelMix.H2O - 1.8*block.RefPerc*FuelMix.CH4);
-            Reformer =[];
+            Flow3 =[];
         case 'internal'
             block.RefPlates = block.Cells/block.RefSpacing;
             RefInlet = FuelMix;
-            RefOutlet.T = mean(block.T.Reform(block.Flow3Dir(:,end)));
-            [RefOutlet,Rref_net] = equilib2D(RefInlet,RefOutlet.T,block.Flow1_Pinit,0,block.FCtype,block.RefPerc,X0guessRef);
+            RefOutlet.T = mean(block.T.Flow3(block.Flow3Dir(:,end)));
+            [RefOutlet,Rref_net] = equilib2D(RefInlet,RefOutlet.T,block.Flow1_Pinit,0,0,block.FCtype,block.RefPerc,X0guessRef);
             AnInlet = RefOutlet;
         case 'direct'
             AnInlet = FuelMix;
-            Reformer =[];
+            Flow3 =[];
         case 'adiabatic' %% find recirculation that achieves desired reformer temp
             Tol = 1e-2;
-            Reformer.Outlet.T = block.ReformT;
+            Flow3.Outlet.T = block.ReformT;
             %% fixed recirculation
-            Reformer.Inlet = FuelMix;
-            [Reformer.Outlet,Rref_net,~,RefPerc] = equilibReform(Reformer.Inlet,block.Flow1_Pinit,0,Reformer.Outlet.T,1,'Q');
+            Flow3.Inlet = FuelMix;
+            [Flow3.Outlet,Rref_net,~,RefPerc] = equilibReform(Flow3.Inlet,block.Flow1_Pinit,0,Flow3.Outlet.T,1,'Q');
             
-            K_CH4eq = (Reformer.Outlet.H2.^3.*Reformer.Outlet.CO)./(Reformer.Outlet.CH4.*Reformer.Outlet.H2O).*(block.Flow1_Pinit./NetFlow(Reformer.Outlet)).^2;
-            K_WGSeq = Reformer.Outlet.CO2.*Reformer.Outlet.H2./(Reformer.Outlet.CO.*Reformer.Outlet.H2O);
-            a = 4352.2./Reformer.Outlet.T - 3.99;
+            K_CH4eq = (Flow3.Outlet.H2.^3.*Flow3.Outlet.CO)./(Flow3.Outlet.CH4.*Flow3.Outlet.H2O).*(block.Flow1_Pinit./NetFlow(Flow3.Outlet)).^2;
+            K_WGSeq = Flow3.Outlet.CO2.*Flow3.Outlet.H2./(Flow3.Outlet.CO.*Flow3.Outlet.H2O);
+            a = 4352.2./Flow3.Outlet.T - 3.99;
             K_WGS = exp(a);% Water gas shift equilibrium constant
             K_CH4 = 2459000*exp(-6.187*a);
             block.scaleK_CH4 = K_CH4eq./K_CH4;
             block.scaleK_WGS = K_WGSeq./K_WGS;
             
-            block.ReformT = Reformer.Outlet.T; %update to have a better guess next time
-            AnInlet = Reformer.Outlet; 
+            block.ReformT = Flow3.Outlet.T; %update to have a better guess next time
+            AnInlet = Flow3.Outlet; 
     end
-    [AnOutlet,Rnet] = equilib2D(AnInlet,AnOutlet.T,block.Flow1_Pinit,sum(block.Current)/(2*F*1000)*block.Cells,block.FCtype,block.AnPercEquilib,X0guess);
+    [AnOutlet,Rnet] = equilib2D(AnInlet,AnOutlet.T,block.Flow1_Pinit,H2consume*block.Cells,COconsume*block.Cells,block.FCtype,block.AnPercEquilib,X0guess);
     if block.Recirc.Anode >0 %only first time through
         errorR = 1;
         while abs(errorR)>1e-5 %% loop to find anode recirculation that meets steam2carbon design
             for i = 1:1:length(block.Spec1)
-                FuelMix.(block.Spec1{i}) = StackAnIn.(block.Spec1{i}) + block.Recirc.Anode*AnOutlet.(block.Spec1{i});
+                FuelMix.(block.Spec1{i}) = Inlet.Flow1.(block.Spec1{i}) + block.Recirc.Anode*AnOutlet.(block.Spec1{i});
             end
             S2Ccheck = FuelMix.H2O/(FuelMix.CH4+.5*FuelMix.CO);
             errorR = (block.Steam2Carbon-S2Ccheck)/block.Steam2Carbon;
@@ -80,7 +86,7 @@ while abs((Rnet.CH4-RCH4old)/Rnet.CH4)>Tol% && (FC.Recirc.Anode>0 || count==0)
         end
         %%find resulting temperature of mixture
         errorT = 1;
-        [~,Hin] = enthalpy(Inlet.AnodeIn);
+        [~,Hin] = enthalpy(Inlet.Flow1);
         [~,Hout] = enthalpy(AnOutlet);
         Hnet = Hin + block.Recirc.Anode*Hout;
         Cp = SpecHeat(AnOutlet);
@@ -126,7 +132,9 @@ switch block.Reformer
         end
         R.CH4 = R.CH4/block.RefPlates;
         R.WGS = R.WGS/block.RefPlates;
-        [R, Reformer, K] = FindKineticCoef(RefInlet,block.T.Reform,R,block.Flow3Dir,Rref_net.CH4/block.RefPlates,zeros(length(R.CH4),1),block.Flow1_Pinit,block.FCtype,block.RefPlates,block.method,1e-5);
+        RefCurrent.H2 = zeros(length(R.CH4),1);
+        RefCurrent.CO = zeros(length(R.CH4),1);
+        [R, Flow3, K] = FindKineticCoef(RefInlet,block.T.Flow3,R,block.Flow3Dir,Rref_net.CH4/block.RefPlates,RefCurrent,block.Flow1_Pinit,block.FCtype,block.RefPlates,block.method,1e-5);
         block.KineticCoeff3 = K;
         block.R_CH4ref = R.CH4;
         block.R_WGSref = R.WGS;  
@@ -137,15 +145,15 @@ switch block.Reformer
         %%---%
         R.CH4ref = Rref_net.CH4;
         R.WGSref = Rref_net.WGS;
-        nout = NetFlow(Reformer.Outlet);
-        X_CH4 = Reformer.Outlet.CH4./nout*block.Flow1_Pinit*1000; %partial pressures in Pa
-        X_H2O = Reformer.Outlet.H2O./nout*block.Flow1_Pinit*1000; %partial pressures in Pa
+        nout = NetFlow(Flow3.Outlet);
+        X_CH4 = Flow3.Outlet.CH4./nout*block.Flow1_Pinit*1000; %partial pressures in Pa
+        X_H2O = Flow3.Outlet.H2O./nout*block.Flow1_Pinit*1000; %partial pressures in Pa
         if strcmp(block.method,'Achenbach')
-            block.KineticCoeff3 = R.CH4ref/(X_CH4.*exp(-8.2e4./(Ru*Reformer.Outlet.T)));
+            block.KineticCoeff3 = R.CH4ref/(X_CH4.*exp(-8.2e4./(Ru*Flow3.Outlet.T)));
         elseif strcmp(block.method,'Leinfelder')
-            block.KineticCoeff3 = R.CH4ref/(30.8e10*X_CH4.*X_H2O.*exp(-2.05e5./(Ru*Reformer.Outlet.T)));
+            block.KineticCoeff3 = R.CH4ref/(30.8e10*X_CH4.*X_H2O.*exp(-2.05e5./(Ru*Flow3.Outlet.T)));
         elseif strcmp(block.method,'Drescher')
-            block.KineticCoeff3 = R.CH4ref/(288.52*X_CH4.*X_H2O.*exp(-1.1e4./(Ru*Reformer.Outlet.T))./(1+16*X_CH4+0.143*X_H2O.*exp(3.9e4./(Ru*Reformer.Outlet.T))));
+            block.KineticCoeff3 = R.CH4ref/(288.52*X_CH4.*X_H2O.*exp(-1.1e4./(Ru*Flow3.Outlet.T))./(1+16*X_CH4+0.143*X_H2O.*exp(3.9e4./(Ru*Flow3.Outlet.T))));
         end
         block.R_CH4ref = R.CH4ref;
         block.R_WGSref = R.WGSref;
@@ -176,7 +184,7 @@ else
 end
 R.CH4 = R.CH4/block.Cells;
 R.WGS = R.WGS/block.Cells;
-[R, Anode, K] = FindKineticCoef(AnInlet,block.T.Anode,R,block.Flow1Dir,Rnet.CH4/block.Cells,block.Current,block.Flow1_Pinit,block.FCtype,block.Cells,block.method,1e-5);
+[R, Flow1, K] = FindKineticCoef(AnInlet,block.T.Flow1,R,block.Flow1Dir,Rnet.CH4/block.Cells,block.Current,block.Flow1_Pinit,block.FCtype,block.Cells,block.method,1e-5);
 block.KineticCoeff1 = K;
 block.R_CH4 = R.CH4;
 block.R_WGS = R.WGS;
@@ -216,12 +224,12 @@ while abs(error)>Tol %iterate to converge on a kinetic coefficients (if less CH4
         k = Dir(:,j);
         if j == 1
             X.CH4 = Inlet.CH4/Cells/r - R.CH4(k);
-            X.CO = Inlet.CO/Cells/r + R.CH4(k);
-            X.CO2 = Inlet.CO2/Cells/r;
-            X.H2 = Inlet.H2/Cells/r + 3*R.CH4(k) - Current(k)/(2*F*1000);%hydrogen consumed
-            X.H2O = Inlet.H2O/Cells/r - R.CH4(k) + Current(k)/(2*F*1000);% water produced
+            X.CO = Inlet.CO/Cells/r + R.CH4(k) - Current.CO(k)/(2*F*1000);
+            X.CO2 = Inlet.CO2/Cells/r + Current.CO(k)/(2*F*1000);
+            X.H2 = Inlet.H2/Cells/r + 3*R.CH4(k) - Current.H2(k)/(2*F*1000);%hydrogen consumed
+            X.H2O = Inlet.H2O/Cells/r - R.CH4(k) + Current.H2(k)/(2*F*1000);% water produced
             if strcmp(Type,'MCFC')
-                X.CO2 = X.CO2 + Current(k)/(2*F*1000); % CO2 brought over
+                X.CO2 = X.CO2 + (Current.H2(k)+Current.CO(k))/(2*F*1000); % CO2 brought over
             end
             for i = 1:1:length(spec)
                 if ~ismember(spec{i},specInterest)
@@ -230,11 +238,12 @@ while abs(error)>Tol %iterate to converge on a kinetic coefficients (if less CH4
             end
         else
             X.CH4 = X.CH4 - R.CH4(k);
-            X.CO = X.CO + R.CH4(k);
-            X.H2 = X.H2 + 3*R.CH4(k) - Current(k)/(2*F*1000);%hydrogen consumed
-            X.H2O = X.H2O - R.CH4(k) + Current(k)/(2*F*1000);% water produced
+            X.CO = X.CO + R.CH4(k) - Current.CO(k)/(2*F*1000);
+            X.CO2 = X.CO2 + Current.CO(k)/(2*F*1000);
+            X.H2 = X.H2 + 3*R.CH4(k) - Current.H2(k)/(2*F*1000);%hydrogen consumed
+            X.H2O = X.H2O - R.CH4(k) + Current.H2(k)/(2*F*1000);% water produced
             if strcmp(Type,'MCFC')
-                X.CO2 = X.CO2 + Current(k)/(2*F*1000); % CO2 brought over
+                X.CO2 = X.CO2 + (Current.H2(k)+Current.CO(k))/(2*F*1000); % CO2 brought over
             end
         end
 

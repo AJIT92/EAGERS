@@ -2,7 +2,8 @@ function Out = ControlSOFCsystem(t,Y, Inlet,block,string1)
 % Controls for SOFC system, control blower power, heater bypass, anode recirculation and fuel flow rate
 % Four (4) inlets: T hot, T cold, T average, Voltage
 % Five (5) outlets:  Heater bypass, blower power, fuel flow rate, current, anode recirculation
-% Three (3) states: Heater bypass, blower power, Current 
+% Two (2) states: Heater bypass, blower power
+%Need to add state for current back in to avoid fuel starvation during step changes
 global Tags F
 I_Gain = block.Gain.*block.Scale;
 TinletError = ((mean(Inlet.Cold) + .5*block.Target(2) + block.dT_cath_PEN) - block.Target(1))/block.Target(2); %target a fixed inlet temperature

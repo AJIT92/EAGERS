@@ -54,7 +54,7 @@ if length(varargin)==1 % first initialization
     block.ConductionPN = block.Solid_CondCoef*block.AcondPN/(block.L_node/2)/1000; %heat transfer coefficient between previous and next node of plate
     block.ConductionLR  = block.Solid_CondCoef*block.AcondLR/(block.W_node/2)/1000; %heat transfer coefficient between left and right adjacent nodes of oxidant plate
 
-    [block.Scale , block.HTcond, block.HTconv] = SteadyTemps(block,Inlet);
+    [block.Scale , block.HTcond, block.HTconv] = SteadyTemps(block,Inlet.Flow1,Inlet.Flow2);
     block.Scale(end+1:end+2,1) = [101+block.PdropCold;101+block.PdropHot;];
     block.IC = ones(3*block.nodes+2,1);
     
@@ -65,51 +65,24 @@ if length(varargin)==1 % first initialization
     block.Effectiveness = FindEffectiveness(Inlet.Flow1,Inlet.Flow2,ColdOut,[]);%calculate effectiveness
 
     %% set up ports : Inlets need to either connected or have initial condition, outlets need an initial condition, and it doesn't matter if they have a connection 
-    block.PortNames = {'Flow1','Flow2','ColdPout','HotPout','ColdOut','HotOut','ColdPin','HotPin'};
-    block.Flow1.type = 'in';
+    block.InletPorts = {'Flow1','Flow2','ColdPout','HotPout'};
     block.Flow1.IC = Inlet.Flow1;
-    
-    block.Flow2.type = 'in';
     block.Flow2.IC = Inlet.Flow2;
-    
-    block.ColdPout.type = 'in';
     block.ColdPout.IC = 101; %Atmospheric pressure
     block.ColdPout.Pstate = []; %identifies the state # of the pressure state if this block has one
-    
-    block.HotPout.type = 'in';
     block.HotPout.IC = 101; %Atmospheric pressure
     block.HotPout.Pstate = []; %identifies the state # of the pressure state if this block has one
     
-    block.ColdOut.type = 'out';
+    block.OutletPorts = {'ColdOut','HotOut','ColdPin','HotPin'};
     block.ColdOut.IC = ColdOut;
-    
-    block.HotOut.type = 'out';
     block.HotOut.IC = HotOut;
-    
-    block.ColdPin.type = 'out';
     block.ColdPin.IC  = block.ColdPout.IC+block.PdropCold;
     block.ColdPin.Pstate = 3*block.nodes+1; %identifies the state # of the pressure state if this block has one
-    
-    block.HotPin.type = 'out';
     block.HotPin.IC  = block.HotPout.IC+block.PdropHot;
     block.HotPin.Pstate = 3*block.nodes+2; %identifies the state # of the pressure state if this block has one
     
     block.P_Difference = {'HotPin','HotPout'; 'ColdPin', 'ColdPout';};
     %no dMdP or mFlow (fixed pressure drop)
-
-    for i = 1:1:length(block.PortNames)
-        if length(block.connections)<i || isempty(block.connections{i})
-            block.(block.PortNames{i}).connected={};
-        else
-            if ischar(block.connections{i})
-                block.(block.PortNames{i}).connected = block.connections(i);
-            else
-                block.(block.PortNames{i}).IC = block.connections{i};
-                block.(block.PortNames{i}).connected={};
-            end
-        end
-    end
-    
 elseif length(varargin)==2 %% Have inlets connected, re-initialize
     Inlet = varargin{2};
     Target = ComponentProperty(block.Target);

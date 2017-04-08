@@ -57,45 +57,20 @@ if length(varargin)==1 % first initialization
     block.dMdP = [dMdP, C]; 
 
     %%
-    block.PortNames = {'Temperature','Species','Pin','Pout','Power','Outlet','Speed'};
-    
-    block.Temperature.type = 'in';
+    block.InletPorts = {'Temperature','Species','Pin','Pout','Power'};
     block.Temperature.IC = block.Tdesign; 
-    
-    block.Species.type = 'in';
     block.Species.IC = block.InitialComposition; 
-    
-    block.Pin.type = 'in';
     block.Pin.IC = 101;%in kPa
     block.Pin.Pstate = []; %identifies the state # of the pressure state if this block has one
-    
-    block.Pout.type = 'in';
     block.Pout.IC = block.Pin.IC*block.Pdesign;%in kPa
     block.Pout.Pstate = []; %identifies the state # of the pressure state if this block has one
-    
-    block.Power.type = 'in';
     block.Power.IC = block.NominalPower;
     
-    block.Outlet.type = 'out';
+    block.OutletPorts = {'Outlet','Speed'};
     block.Outlet.IC = Flow;
-      
-    block.Speed.type = 'out';
     block.Speed.IC = block.RPMdesign;
     
     block.P_Difference = {'Pout','Pin'};
-
-    for i = 1:1:length(block.PortNames)
-        if length(block.connections)<i || isempty(block.connections{i})
-            block.(block.PortNames{i}).connected={};
-        else
-            if ischar(block.connections{i})
-                block.(block.PortNames{i}).connected = block.connections(i);
-            else
-                block.(block.PortNames{i}).IC = block.connections{i};
-                block.(block.PortNames{i}).connected={};
-            end
-        end
-    end
     
     Tags.(block.name).RPM = block.RPMdesign;
     Tags.(block.name).Flow = Flow;
@@ -114,33 +89,7 @@ if length(varargin)==2 %% Have inlets connected, re-initialize
     nRPM = RPM/(block.RPMdesign*(Inlet.Temperature/block.Tdesign)^.5);%normalized RPM
     [Power,Flow,block] = OpPoint(nRPM,Inlet,block);
     block.NominalPower = Power;
-%     error = Inlet.Power;
-%     Tol = (1e-3)*Inlet.Power;
-%     while abs(error)>Tol
-%         [Power,Flow,block] = OpPoint(nRPM,Inlet,block);
-%         if block.RPM(end)<=nRPM
-%             dRPM = -1e-5*nRPM;
-%         else
-%             dRPM = 1e-5*nRPM;
-%         end
-%         [Power2,~,~] = OpPoint(nRPM+dRPM,Inlet,block);
-%         dPdRPM = (Power2-Power)/dRPM;
-%         error = (Inlet.Power - Power);
-%         if dPdRPM<0
-%             dPdRPM = Inlet.Power*2;
-%         end
-%         
-%         if block.RPM(end)<=nRPM && error>0
-%             error = 0; %at edge of map, can't increase power anymore
-%         elseif block.RPM(1)>=nRPM && error<0
-%             error = 0; % at lower edge of map, can't decrease power
-%         else
-%             nRPM = max(min(nRPM + error/dPdRPM,block.RPM(end)),block.RPM(1));
-%         end
-%         
-%     end
-%     RPM = nRPM*(block.RPMdesign*(Inlet.Temperature/block.Tdesign)^.5);
-    
+
     FlowIn = Flow;
     FlowIn.T = Inlet.Temperature;
     H2a = enthalpy(FlowIn)+block.NominalPower;

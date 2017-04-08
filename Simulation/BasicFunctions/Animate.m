@@ -1,8 +1,8 @@
 function Animate(Time,Y,block,FigNum)
 %% Animate, produces several graphs and videos of transients
 %%Static Background & Coordinates
-global Model_dir
-FCstates_alltime = Y(:,block.States).*(ones(length(Y(:,1)))*block.Scale');
+global Model_dir TagInf
+FCstates_alltime = zeros(length(Y(:,1)),length(block.States));
 columns = block.columns;
 rows = block.rows;
 nodes = block.nodes;
@@ -116,6 +116,18 @@ filename = fullfile(Model_dir,'graphics','Videos',VideoName);
 vidObj = VideoWriter(filename);
 
 points = length(Time);
+PENavgT = zeros(points,1);
+Voltage = zeros(points,1);
+Current = zeros(points,1);
+Power = zeros(points,1);
+for t = 1:1:points
+    FCstates_alltime(t,:) = FCstates;
+    FCstates = Y(t,block.States).*block.Scale';
+    PENavgT(t) = mean(FCstates(2*nodes+1:3*nodes));
+    Voltage(t) = TagInf.(block.name).Voltage(t);
+    Current(t) = sum(FCstates(end-nodes-1:end-2));
+    Power(t) = Voltage(t)*Current(t);
+end
 Frames = 100;
 dt = ((time2+100)-(time1-50))/Frames;
 
@@ -139,16 +151,9 @@ for f = 1:1:Frames+1
     pretime = posttime -1;
     stepSize = Time(posttime)-Time(pretime);
     a = (Time(posttime)-((time1-50)+(f-1)*dt))/stepSize;
-    t=pretime;
-
     %% Interpolate data for all frams from start of transient to t + 100s
-    % CathT = a*States(pretime,1+1*nodes:2*nodes)+(1-a)*States(pretime,1+1*nodes:2*nodes);
-    % ElecT = a*States(pretime,1+2*nodes:3*nodes)+(1-a)*States(pretime,1+2*nodes:3*nodes);
-    % AnodeT = a*States(pretime,1+3*nodes:4*nodes)+(1-a)*States(pretime,1+3*nodes:4*nodes);
-
-    Yt = a*FCstates_alltime(pretime,1+2*nodes:3*nodes)+(1-a)*FCstates_alltime(pretime,1+2*nodes:3*nodes);
-    FCstates = Yt(block.States).*block.Scale';
-    CellT = FCstates(2*nodes+1:3*nodes);
+    Yt = a*FCstates_alltime(pretime,:)+(1-a)*FCstates_alltime(posttime,:);
+    CellT = Yt(2*nodes+1:3*nodes);
     C = Zcoord*0;
     if Manifold== 0
         for j = 1:1:rows
@@ -159,9 +164,6 @@ for f = 1:1:Frames+1
         C(rows+2,linspace(columns+1,1,columns+1)) = [CellT(linspace(rows*columns,(rows-1)*columns+1,columns)) CellT((rows-1)*columns+1)];
         C(linspace(rows+1,1,rows+1),1) = [CellT(linspace((rows-1)*columns+1,1,rows)) CellT(1)];
     elseif Manifold == 1
-        % AnodeEdgeTemps = a*EdgeStates(pretime,1:2*(rows+columns+2)+1)+(1-a)*EdgeStates(pretime,1:2*(rows+columns+2)+1);
-        % PlateEdgeTemps = a*EdgeStates(pretime,2*(rows+columns+2)+1:4*(rows+columns+2)+1)+(1-a)*EdgeStates(pretime,2*(rows+columns+2)+1:4*(rows+columns+2)+1);
-        % CathEdgeTemps = a*EdgeStates(pretime,4*(rows+columns+2)+1:6*(rows+columns+2)+1)+(1-a)*EdgeStates(pretime,4*(rows+columns+2)+1:6*(rows+columns+2)+1);
         EdgeT = a*EdgeStates(pretime,2*(rows+columns+2)+1:4*(rows+columns+2)+1)+(1-a)*EdgeStates(pretime,2*(rows+columns+2)+1:4*(rows+columns+2)+1);
         for j = 1:1:rows
             C(j+2,3:columns+2) = CellT(1+(j-1)*columns:j*columns);
@@ -187,7 +189,7 @@ for f = 1:1:Frames+1
         Tmax = 1100;
     end
     time = [(f-1)*dt, (f-1)*dt]; 
-    one = [800 1100];
+    one = [-inf,inf];
 
     %%%%%%Electrolyte
     hidden on
@@ -214,7 +216,7 @@ for f = 1:1:Frames+1
     title('Electrolyte Temperature Profile','fontsize',14)
     xlabel(Xlabel,'Fontsize',14)
     ylabel(Ylabel,'Fontsize',14)
-    subplot('Position',[.6 .125 .3 .775]), [Ax,H1,H2] =plotyy(TimePlot(point1:point2),PENavgT(point1:point2),TimePlot(point1:point2),FC_Out(point1:point2,3)/FC_Out(point1,3)*100);
+    subplot('Position',[.6 .125 .3 .775]), [Ax,H1,H2] =plotyy(TimePlot(point1:point2),PENavgT(point1:point2),TimePlot(point1:point2),Power(point1:point2));
     set(H1, 'LineWidth',2,'Color','red','LineStyle','-.')
     set(H2, 'LineWidth',2,'Color','cyan','LineStyle','-')
     set(Ax(1),'XColor','k','YColor','k','Fontsize',12)
@@ -224,17 +226,17 @@ for f = 1:1:Frames+1
     hold off
     xlabel(strTime,'Fontsize',16,'Color',[0 0 0])
     axis(Ax(1),[0 TimePlot(length(TimePlot)) Tmin Tmax])
-    axis(Ax(2),[0 TimePlot(length(TimePlot)) 0 200])
+    axis(Ax(2),[0 TimePlot(length(TimePlot)) 0 10*round(0.11*max(Power(point1:point2)))])
     ylabel(Ax(1),'PEN Avg Temp (K)','Fontsize',16,'Color',[0 0 0])
     ylabel(Ax(2),'Stack Power (%)','Fontsize',16,'Color',[0 0 0])
     legend(Ax(1),'Stack Power','PEN Avg Temp','Location','NorthEast')
     set(Ax(1),'YTick',Tmin:20:Tmax)
-    set(Ax(2),'YTick',0:20:200)
+    set(Ax(2),'YTick',0:ceil(0.11*max(Power(point1:point2))):10*ceil(0.11*max(Power(point1:point2))))
     %% Create movie frame
     writeVideo(vidObj,currFrame);
 %         Electrolyte(f)=getframe(h,[25 0 975 440]);
 end %ends frame loop      
 close(vidObj);    
     
-%     movie2avi(Electrolyte, 'SOFCPowerSweep')%%Make frames into a movie
+% movie2avi(Electrolyte, 'SOFCPowerSweep')%%Make frames into a movie
 % movie(h,Electrolyte,1);

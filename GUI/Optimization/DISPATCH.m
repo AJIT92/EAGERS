@@ -948,7 +948,7 @@ end
 
 % --- Executes on button press in SAVE.
 function SAVE_Callback(hObject, eventdata, handles)
-global Plant
+global Plant Model_dir
 Plant.optimoptions.Interval = str2double(get(handles.Interval, 'String'));
 Plant.optimoptions.Topt = str2double(get(handles.Topt, 'String'));
 Plant.optimoptions.Tmpc = str2double(get(handles.Tmpc, 'String'));
@@ -983,6 +983,10 @@ end
 if get(handles.checkboxSteam,'Value')==1
     Plant.optimoptions.Outputs(end+1) ={'S'}; 
 end
+[f,p]=uiputfile(fullfile(Model_dir,'Plant','PlantNew.mat'),'Save Plant As...');
+if f==0; return; end
+Plant.Name=strrep(f,'.mat','');
+save([p,f],'Plant')
 
 function changingtimesteps_SelectionChangeFcn(hObject, eventdata, handles)
 global Plant
@@ -1004,18 +1008,22 @@ switch get(eventdata.NewValue,'Tag')
 end
 
 function excessHeat_Callback(hObject, eventdata, handles)
+global Plant
+Plant.optimoptions.excessHeat = get(hObject, 'Value');
 function Interval_Callback(hObject, eventdata, handles)
 function Interval_CreateFcn(hObject, eventdata, handles)
 if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
     set(hObject,'BackgroundColor','white');
 end
 function Resolution_Callback(hObject, eventdata, handles)
+global Plant
 Plant.optimoptions.Resolution = str2double(get(handles.Resolution, 'String'));
 function Resolution_CreateFcn(hObject, eventdata, handles)
 if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
     set(hObject,'BackgroundColor','white');
 end
 function Horizon_Callback(hObject, eventdata, handles)
+global Plant
 Plant.optimoptions.Horizon = str2double(get(handles.Horizon, 'String'));
 
 function Horizon_CreateFcn(hObject, eventdata, handles)

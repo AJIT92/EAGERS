@@ -3,7 +3,7 @@ function block = InitializeBattery(varargin)
 %1 inlets: V
 %6 outlets: IbatMax, IbatMin, VbatMax, VbatMin, E, EMax
 %2 states: Temp, SoC(state of charge)
-
+block = varargin{1};
 if length(varargin) ==1 %first initialization
     block.Tamb = 305;%ambient air temp
     block.AmbConvC = 5;%ambient convection coefficient
@@ -42,18 +42,13 @@ if length(varargin) ==1 %first initialization
     block.Scale = [block.Tamb, 1];%SoC is between 0 and 1
     block.IC = [1,block.InitialSoC];
     
-    block.PortNames = {'IbatMax','IbatMin','VbatMax','VbatMin','E','EMax','V'};
+    block.InletPorts = {'V'};
+    block.V.IC = block.BatMaxV*(block.k1 + block.k2*log(block.Scale(2)*block.IC(2)) + block.k3*log(1-block.Scale(2)*block.IC(2)));
     
-    block.IbatMax.type = 'out';
+    block.OutletPorts = {'IbatMax','IbatMin','VbatMax','VbatMin','E','EMax'};
     block.IbatMax.IC = -block.IMax;%current at max applied voltage
-    
-    block.IbatMin.type = 'out';
     block.IbatMin.IC = block.IMax;%current at min applied voltage
-    
-    block.VbatMax.type = 'out';
     block.VbatMax.IC = block.Scale(2)*block.IC(2) + (block.IbatMax.IC*block.Resistance);
-    
-    block.VbatMin.type = 'out';
     block.VbatMin.IC = block.Scale(2)*block.IC(2) + (block.IbatMin.IC*block.Resistance);
     
     nSoC = linspace(block.SoCMin, block.Scale(2)*block.IC(2), block.n);
@@ -65,11 +60,8 @@ if length(varargin) ==1 %first initialization
         nV = (nV1+nV2)/2;%evaluates each section at midpoint
         E = E + nV*ndt;%E = V*I*dt, but ndt = dt/I
     end
-    
-    block.E.type = 'out';
     block.E.IC = E;
-    
-    
+     
     nSoC = linspace(block.SoCMin, block.SoCMax, block.n);
     EMax = 0;
     for i = 1:(block.n - 1)    
@@ -79,25 +71,7 @@ if length(varargin) ==1 %first initialization
         nV = (nV1+nV2)/2;
         EMax = EMax + nV*ndt;
     end
-    
-    block.EMax.type = 'out';
     block.EMax.IC = EMax;
-    
-    block.V.type = 'in';
-    block.V.IC = block.BatMaxV*(block.k1 + block.k2*log(block.Scale(2)*block.IC(2)) + block.k3*log(1-block.Scale(2)*block.IC(2)));
-    
-    for i = 1:1:length(block.PortNames)
-        if length(block.connections)<i || isempty(block.connections{i})
-            block.(block.PortNames{i}).connected={};
-        else
-            if ischar(block.connections{i})
-                block.(block.PortNames{i}).connected = block.connections(i);
-            else
-                block.(block.PortNames{i}).IC = block.connections{i};
-                block.(block.PortNames{i}).connected={};
-            end
-        end
-    end
 elseif length(varargin) ==2 %have inlets
     %Inlet = varargin{2};%states don't change during initialization
     

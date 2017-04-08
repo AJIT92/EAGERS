@@ -7,18 +7,12 @@ if length(varargin)==1 %first initialization
     block.Scale =[];%no states exist
     block.IC = ones(length(block.Scale),1);
     %% set up ports : Inlets need to either connected or have initial condition, outlets need an initial condition, and it doesn't matter if they have a connection 
-    block.PortNames = {'Temperature','Species','Flow','Outlet'};
-
-    block.Temperature.type = 'in';
+    block.InletPorts = {'Temperature','Species','Flow'};
     block.Temperature.IC = 298; 
-
-    block.Species.type = 'in';
     block.Species.IC = block.InitialComposition; 
-
-    block.Flow.type = 'in';
     block.Flow.IC = 1;  
     
-    block.Outlet.type = 'out';
+    block.OutletPorts = {'Outlet'};
     block.Outlet.IC.T = block.Temperature.IC;
     speciesNames = fieldnames(block.Species.IC);
     for i = 1:1:length(speciesNames)
@@ -26,19 +20,6 @@ if length(varargin)==1 %first initialization
     end
     
     block.P_Difference = {};
-    
-    for i = 1:1:length(block.PortNames)
-        if length(block.connections)<i || isempty(block.connections{i})
-            block.(block.PortNames{i}).connected={};
-        else
-            if ischar(block.connections{i})
-                block.(block.PortNames{i}).connected = block.connections(i);
-            else
-                block.(block.PortNames{i}).IC = block.connections{i};
-                block.(block.PortNames{i}).connected={};
-            end
-        end
-    end
 end
 
 if length(varargin)==2 %% Have inlets connected, re-initialize

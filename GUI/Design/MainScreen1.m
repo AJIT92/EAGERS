@@ -22,7 +22,7 @@ function varargout = MainScreen1(varargin)
 
 % Edit the above text to modify the response to help MainScreen1
 
-% Last Modified by GUIDE v2.5 07-Mar-2017 17:30:26
+% Last Modified by GUIDE v2.5 03-Apr-2017 11:10:48
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -96,6 +96,11 @@ varargout{1} = handles.output;
 
 % --- Executes on button press in saveProject.
 function saveProject_Callback(hObject, eventdata, handles)
+global Model_dir Plant
+[f,p]=uiputfile(fullfile(Model_dir,'Plant','PlantNew.mat'),'Save Plant As...');
+if f==0; return; end
+Plant.Name=strrep(f,'.mat','');
+save([p,f],'Plant')
 
 
 % --- Executes on selection change in popupmenuProjectMain.
@@ -107,7 +112,7 @@ global Model_dir
 % Load file that was selected from the popupmenu
 projList = get(handles.popupmenuProjectMain,'String');
 projName = projList{get(handles.popupmenuProjectMain,'Value')};
-projFile = fullfile(Model_dir,'DesignProjects',projName);
+projFile = fullfile(Model_dir,'Plant',projName);
 load(projFile);
 popupmenuAxes_Callback(hObject, eventdata, handles)
 
@@ -638,9 +643,21 @@ if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgr
     set(hObject,'BackgroundColor','white');
 end
 
+function uitableEffCurve_CellEditCallback(hObject, eventdata, handles)
+global Plant SYSINDEX
+Outputs = fieldnames(Plant.Generator(SYSINDEX).Output);
+nOutput = eventdata.Indices;
+newValue = eventdata.NewData;
+Plant.Generator(SYSINDEX).Output.(Outputs{nOutput(2)})(nOutput(1)) = newValue;
+
 function saveSystem_Callback(hObject, eventdata, handles)
-global selectedSystem Plant testSystems
+global selectedSystem Plant testSystems Model_dir
 testSystems(selectedSystem).Plant = Plant;
+[f,p]=uiputfile(fullfile(Model_dir,'Plant','PlantNew.mat'),'Save Plant As...');
+if f==0; return; end
+Plant.Name=strrep(f,'.mat','');
+save([p,f],'Plant')
+
 
 %% Library (Tab 3) callbacks
 function selectComponent(hObject,selected, handles)
@@ -795,3 +812,6 @@ function sliderComfort_CreateFcn(hObject, eventdata, handles)
 if isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
     set(hObject,'BackgroundColor',[.9 .9 .9]);
 end
+
+
+

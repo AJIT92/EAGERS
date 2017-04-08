@@ -1,16 +1,18 @@
 function Out = ControlFCstack(t,Y, Inlet,block,string1)
-% Controls for Fuel cell stack only, control air flow and inlet temperature and fuel flow rate, net current and anode recirculation
-% Four (4) inlets: T hot, T cold, T average, Voltage
+% Controls for Fuel cell stack only, control air flow, inlet temperature, fuel flow rate, net current and anode recirculation
+% Three (3) inlets: T hot, T cold, Voltage
 % Six (6) outlets: OxidentTemp, oxidant flow rate, fuel temp, fuel flow rate, current, anode recirculation
-% Three (3) states: OxidentTemp, oxidant flow rate, Current 
-% if OxyFC: % Three (3) states: anode recirculation, Fuel flow rate, net current
+% One (1) state: , oxidant flow rate
+% Current, Fuel Flow, OxidentTemp, and Anode Recirculation are calculated directly (feed-forward)
+% if OxyFC: % Three (3) states: anode recirculation, Fuel flow rate, Current
+
 global Tags F
 NetPower = PowerDemandLookup(t);
-averageT = mean(Inlet.PEN_Temp);
+averageT = (Inlet.Cold+Inlet.Hot)/2;
 TavgError = (block.Target(1)-averageT)/block.Target(2);
 deltaT = (mean(Inlet.Hot)-mean(Inlet.Cold));
 dTerror =(deltaT-block.Target(2))/block.Target(2);
-    
+%     
 if isfield(block,'OxyFC')
     Current = Y(3)+ (TavgError*block.PropGain(3))*block.Scale(3); % current controller for managing temperature in closed-end cathode FC (proportional control only)
     O2flow = block.Cells*Current/(4*F*1000)*32*3600*24/1000; %Ton/day
@@ -44,39 +46,20 @@ else
         Recirculation = 0;
     else
         Steam2Carbon = block.Target(3);
-        CH4 = block.Fuel.CH4*FuelFlow;
-        r = block.AnodeRecirc.IC; %Initial guess of anode recirculation
-        dr = 1e-6;
-        error = 1;
-        % Inlet = (Inlet + generated - consumed)*r  + New, thus inlet = New/(1-r) + (generated - consumed)*r/(1-r)
-        while abs(error)>1e-6
-            COin = block.Fuel.CO*FuelFlow/(1-r) + (block.Fuel.CH4 - block.WGSeffective*(block.Fuel.CH4+block.Fuel.CO))*FuelFlow*r/(1-r);
-            Inlet.FuelMix.H2O = block.Fuel.H2O*FuelFlow/(1-r) + (block.Cells*Current /(2*F*1000) - (block.Fuel.CH4 + (block.Fuel.CH4 + block.Fuel.CO)*block.WGSeffective)*FuelFlow)*r/(1-r);
-            S2C = Inlet.FuelMix.H2O/(CH4 + 0.5*COin);
-            error = Steam2Carbon - S2C;
-            r2 = r+dr;
-            COin2 = block.Fuel.CO*FuelFlow/(1-r2) + (block.Fuel.CH4 - block.WGSeffective*(block.Fuel.CH4+block.Fuel.CO))*FuelFlow*r2/(1-r2);
-            H2Oin2 = block.Fuel.H2O*FuelFlow/(1-r2) + (block.Cells*Current/(2*F*1000) - (block.Fuel.CH4 + (block.Fuel.CH4 + block.Fuel.CO)*block.WGSeffective)*FuelFlow)*r2/(1-r2);
-            S2C2 = H2Oin2/(CH4 + 0.5*COin2);
-            dSdr = (S2C2 - S2C)/dr;
-            r = r + error/dSdr;
-        end
-        Recirculation = r;
+        Recirculation = anodeRecircHumidification(block.Fuel,FuelFlow,block.WGSeffective,Steam2Carbon,block.Cells*Current/(2*F*1000),block.AnodeRecirc.IC);
     end
 end
 if strcmp(string1,'Outlet')
     if isfield(block,'OxyFC')
-        Out.OxidantTemp = block.Target(1);
         Out.OxidantFlow = block.Cells*Current/(4000*F*block.Oxidant.O2); % kmol/s
         Out.AnodeRecirc = Y(1)+ dTerror*block.PropGain(1)*block.Target(2);
     else
-        Out.OxidantTemp = Y(1)+(TavgError*block.PropGain(1))*block.Scale(1);
-        Out.OxidantFlow = Y(2)+(dTerror*block.PropGain(2))*block.Scale(2);
+        Out.OxidantFlow = Y(1)+(dTerror*block.PropGain(1))*block.Scale(1);
         Out.AnodeRecirc =  Recirculation;
     end
+    Out.OxidantTemp = block.OxidantTemp.IC;
     Out.FuelFlow = FuelFlow;
     Out.Current = Current;
-    
     Tags.(block.name).FuelFlow = Out.FuelFlow;
     Tags.(block.name).Current = Out.Current;
     Tags.(block.name).Recirculation = Out.AnodeRecirc;
@@ -89,9 +72,8 @@ elseif strcmp(string1,'dY')
         dY(1) = block.Gain(1)*dTerror; %recirculation changes temperature gradient
         dY(2) = block.Gain(2)*PowerError;%fuel flow
         dY(3) = block.Gain(3)*VoltageError;%current
-    else    
-        dY(1) = block.Gain(1)*TavgError;
-        dY(2) = block.Gain(2)*dTerror;
+    else  
+        dY(1) = block.Gain(1)*dTerror;
     end
     Out = dY;
 end

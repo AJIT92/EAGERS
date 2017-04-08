@@ -7,7 +7,7 @@ stor = [];
 dt = Time' - [0, Time(1:end-1)]';
 MaxDODcapacity = zeros(1,nG);
 for i = 1:1:nG
-    if isfield(Plant.Generator(i).OpMatA,'Stor')
+    if isfield(Plant.Generator(i).OpMatA,'Stor') && Plant.Generator(i).Enabled
         stor(end+1) = i;
         if isfield(Plant.Generator(i).VariableStruct,'MaxDOD')
             MaxDODcapacity(i) = Plant.Generator(i).Size*(1-Plant.Generator(i).VariableStruct.MaxDOD/100);
@@ -93,7 +93,7 @@ for q = 1:1:length(S)
         nCorrespond = [];
         for i = 1:1:length(Plant.Generator)
             include = false;
-            if isfield(Plant.Generator(i).OpMatA,'Stor') && isfield(Plant.Generator(i).OpMatA.output,S{q}) % energy storage
+            if isfield(Plant.Generator(i).OpMatA,'Stor') && isfield(Plant.Generator(i).OpMatA.output,S{q}) && Plant.Generator(i).Enabled % energy storage
                 stor(end+1) = i;
                 include = true;
             elseif (strcmp(Plant.Generator(i).Type,'Utility')||~isempty(strfind(Plant.Generator(i).Type,'District'))) && isfield(Plant.Generator(i).OpMatA.output,S{q}) %utilities

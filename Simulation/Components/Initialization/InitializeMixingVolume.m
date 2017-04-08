@@ -25,45 +25,25 @@ if length(varargin)==1 %first initialization
     block.Scale(end) = 101 + block.Pdrop;
     block.spec = spec;
    
-    block.PortNames = {};
+    block.InletPorts = {};
     for i = 1:1:block.inlets
         name = strcat('Inlet',num2str(i));
-        block.PortNames(end+1) = cellstr(name);
-        block.(name).type = 'in';
+        block.(name) = [];
+        block.InletPorts(end+1) = cellstr(name);
     end
-    
-    block.PortNames(end+1:end+4) = {'Pout';'Outlet';'Temperature';'Pin';}; %inlet port names must be first
-    
-    block.Pout.type = 'in';
+    block.InletPorts(end+1) = {'Pout'};
     block.Pout.IC = 101;
     block.Pout.Pstate = []; %identifies the state # of the pressure state if this block has one
     
-    block.Outlet.type = 'out';
+    block.OutletPorts = {'Outlet';'Temperature';'Pin';};
     block.Outlet.IC = block.SpeciesInit;
     block.Outlet.IC.T = block.Tinit; 
-    
-    block.Temperature.type = 'out';
     block.Temperature.IC = block.Outlet.IC.T;
-    
-    block.Pin.type = 'out';
     block.Pin.IC = block.Pout.IC+block.Pdrop;
     block.Pin.Pstate = length(block.Scale); %identifies the state # of the pressure state if this block has one
     
     block.P_Difference = {'Pin','Pout'};
     %no dMdP or mFlow (fixed pressure drop)
-    
-    for i = 1:1:length(block.PortNames)
-        if length(block.connections)<i || isempty(block.connections{i})
-            block.(block.PortNames{i}).connected={};
-        else
-            if ischar(block.connections{i})
-                block.(block.PortNames{i}).connected = block.connections(i);
-            else
-                block.(block.PortNames{i}).IC = block.connections{i};
-                block.(block.PortNames{i}).connected={};
-            end
-        end
-    end
 elseif length(varargin)==2%% Have inlets connected, re-initialize
     Inlet =varargin{2};
     n = block.inlets;     

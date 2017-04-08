@@ -1,11 +1,9 @@
-%% SOFC stack with basic control of fuel and air flow
+%% SOFC stack fed with a pure O2 cathode. Indirect internal reforming manages the internal temperature
 function Plant = OxyFC
 Plant.NominalPower=300;%power in kW
 
 Steam2Carbon = 2.0;
 Oxidant.O2 = 1;
-% Oxidant.O2 = .333; %MCFC
-% Oxidant.CO2 = .667;
 
 Fuel.CH4 = 0.9;
 Fuel.CO = 0.04;
@@ -46,7 +44,7 @@ if S2C<Steam2Carbon %add anode recirculation
     Plant.Components.recircValve.name = 'recircValve';
     Plant.Components.recircValve.InitialFlowIn = FCexit;
     Plant.Components.recircValve.InitialFlowIn.T = 1050;
-    Plant.Components.recircValve.connections = {'FC1.AnodeOut','Controller.AnodeRecirc'};
+    Plant.Components.recircValve.connections = {'FC1.Flow1Out','Controller.AnodeRecirc'};
     Plant.Components.recircValve.PercOpen = 0.5; %INITIAL valve position
 
     %Mixing
@@ -56,7 +54,7 @@ if S2C<Steam2Carbon %add anode recirculation
     Plant.Components.Mix1.inlets = 2;
     Plant.Components.Mix1.SpeciesInit = PartiallyRef;
     Plant.Components.Mix1.Tinit = 800;
-    Plant.Components.Mix1.connections = {'FuelSource.Outlet';'recircValve.Out1';'FC1.AnodePressureIn'};
+    Plant.Components.Mix1.connections = {'FuelSource.Outlet';'recircValve.Out1';'FC1.Flow1Pin'};
     Plant.Components.Mix1.TagInf = {'MassFlow';'Temperature';};
 end
 
@@ -75,7 +73,7 @@ Plant.Components.FC1.columns = 4;
 Plant.Components.FC1.rows = 1;
 Plant.Components.FC1.RatedStack_kW = 300; %Nominal Stack Power in kW
 Plant.Components.FC1.Fuel = Fuel; %initial fuel composition at inlet
-Plant.Components.FC1.Oxidant = Oxidant;
+Plant.Components.FC1.Flow2Spec = Oxidant;
 Plant.Components.FC1.Steam2Carbon = Steam2Carbon; %steam to carbon ratio that fuel or recirculaton is controlled to
 Plant.Components.FC1.method = 'Achenbach'; %Determines reforming reaction kinetics options: 'Achenbach' , 'Leinfelder' , 'Drescher'   
 Plant.Components.FC1.L_Cell= .09;  %Cell length in meters
@@ -85,12 +83,12 @@ Plant.Components.FC1.SpecificationValue = 0.86; % power density specified in mW/
 Plant.Components.FC1.deltaTStack = 50; %temperature difference from cathode inlet to cathode outlet
 Plant.Components.FC1.TpenAvg = 1023;% 750 C, average electrolyte operating temperature
 Plant.Components.FC1.FuelUtilization = Plant.Components.FC1.SpecificationValue*1.6 - .728;% ; %fuel utilization (net hydrogen consumed/ maximum hydrogen produced with 100% Co and CH4 conversion (initial guess, will be iterated)
-Plant.Components.FC1.AnodePdrop = 2; %design anode pressure drop
-Plant.Components.FC1.CathodePdrop = 10; %Design cathode pressure drop
+Plant.Components.FC1.Flow1Pdrop = 2; %design anode pressure drop
+Plant.Components.FC1.Flow2Pdrop = 10; %Design cathode pressure drop
 if S2C<Steam2Carbon %add anode recirculation
-    Plant.Components.FC1.connections = {'Controller.Current';'O2Source.Outlet';'Mix1.Outlet';'';'';};
+    Plant.Components.FC1.connections = {'Controller.Current';'Mix1.Outlet';'O2Source.Outlet';'';'';};
 else
-    Plant.Components.FC1.connections = {'Controller.Current';'O2Source.Outlet';'FuelSource.Outlet';'';'';};
+    Plant.Components.FC1.connections = {'Controller.Current';'FuelSource.Outlet';'O2Source.Outlet';'';'';};
 end
 Plant.Components.FC1.TagInf = {'Power';'Current';'Voltage';'PENavgT';'StackdeltaT';'H2utilization';'O2utilization';'TcathOut';'LocalNernst';};
 Plant.Components.FC1.TagFinal = {'Power';'Current';'Voltage';'PENavgT';'StackdeltaT';'H2utilization';'O2utilization';};
@@ -100,15 +98,15 @@ Plant.Controls.Controller.type = 'ControlFCstack';
 Plant.Controls.Controller.name = 'Controller';
 Plant.Controls.Controller.Target = {'FC1.TpenAvg';'FC1.deltaTStack';'FC1.Steam2Carbon'};
 Plant.Controls.Controller.OxyFC = 'yes';
-Plant.Controls.Controller.OxidantUtilization = 'FC1.OxidantUtilization';
 Plant.Controls.Controller.Fuel = 'FC1.Fuel';
-Plant.Controls.Controller.Oxidant = 'FC1.Oxidant';
+Plant.Controls.Controller.Oxidant = 'FC1.Flow2Spec';
+Plant.Controls.Controller.OxidantUtilization = 'FC1.OxidantUtilization';
 Plant.Controls.Controller.Cells = 'FC1.Cells';
-Plant.Controls.Controller.InitConditions = {'FC1.Recirc.Anode';'FC1.AnodeIn.IC';'FC1.Current';}; %Recirculation, fuel flow rate, net current
+Plant.Controls.Controller.InitConditions = {'FC1.Recirc.Anode';'FC1.Flow1.IC';'FC1.Current';}; %Recirculation, fuel flow rate, net current
 Plant.Controls.Controller.Gain = [0;1e-1;1e0];
 Plant.Controls.Controller.PropGain = [0;0;1];
 Plant.Controls.Controller.TagInf = {'OxidantFlow';'OxidantTemp';'FuelFlow';'Current';'Recirculation';'Power';};
-Plant.Controls.Controller.connections = {'FC1.MeasureTanodeOut';'Controller.OxidantTemp';'FC1.MeasureTpen';'FC1.MeasureVoltage';};
+Plant.Controls.Controller.connections = {'FC1.MeasureTflow1';'Controller.OxidantTemp';'FC1.MeasureVoltage';};
 
 Plant.Scope = {'Controller.FuelFlow';'Controller.Current';'Controller.Recirculation';'Controller.Power';}; %must be in TagInf of the corresponding block to work here
 Plant.Plot = [Plant.Scope;{'FC1.StackdeltaT';'FC1.PENavgT';'FC1.Voltage';'FC1.TcathOut';'FC1.LocalNernst';}];

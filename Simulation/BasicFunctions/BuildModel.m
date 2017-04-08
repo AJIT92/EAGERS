@@ -45,28 +45,16 @@ for k = 1:1:length(list)
         modelParam.IC(n+1:n+s,1) = states; 
         modelParam.Scale(n+1:n+s,1) = scale; 
         n = n+s;
-    end
-    list2 = modelParam.(block).PortNames;
-    for i = 1:1:length(list2)
-        port = list2{i};
-        if strcmp(modelParam.(block).(port).type,'in') %%&& isempty(modelParam.(block).(port).connected)%constant inlet value for inlets that are not connected to another block
-            if isfield(modelParam.(block).(port),'IC')
-                Inlet.(block).(port) = modelParam.(block).(port).IC; %use initial condition, update later if connected to an outlet
-            else Inlet.(block).(port) = []; %don't have an IC for this inlet port, will get updated later
-            end
-        elseif strcmp(modelParam.(block).(port).type,'out')
-            Outlet.(block).(port) = modelParam.(block).(port).IC;
-        end
-    end   
+    end 
 end
-
-OldInlet = Inlet; %initial condition inlets
-%% Run to steady state (24 hours)
+connectPorts
+%% Converge component initializations to an approximation of steady-state operation
 SimSettings.RunTime = 3600*24;
 if isfield(modelParam,'NominalPower')
     SimSettings.PowerDemand    = [1 1]*modelParam.NominalPower;
     SimSettings.PowerTime = linspace(0,SimSettings.RunTime,length(SimSettings.PowerDemand));
 end
+OldInlet = Inlet; %initial condition inlets
 Error = 1;
 error = zeros(length(controls),1);
 count = 0;
@@ -102,12 +90,9 @@ while abs(Error)>Tol %repeat several times to propogate inlets to outlets
                     modelParam.(block2).States = modelParam.(block2).States + newStates;
                 end
             end
-            list2 = modelParam.(block).PortNames;
+            list2 = modelParam.(block).OutletPorts;
             for i = 1:1:length(list2) %update inlets connected to outlets
-                port = list2{i};
-                if strcmp(modelParam.(block).(port).type,'out')
-                    Outlet.(block).(port) = modelParam.(block).(port).IC;
-                end
+                Outlet.(block).(list2{i}) = modelParam.(block).(list2{i}).IC;
             end
             OldInlet.(block) = Inlet.(block); %just ran this block, if any changes are made to inlet, need to re-run
         end
@@ -127,6 +112,7 @@ while abs(Error)>Tol %repeat several times to propogate inlets to outlets
 end
 close(WaitBar.Handle); 
 n = 0;
+%% Plot the intial guess of temperature distribution for fuel cells andelectrolyzers
 for i = 1:1:length(CompNames)
     if strcmp(modelParam.Components.(CompNames{i}).type,'FuelCell')|| strcmp(modelParam.Components.(CompNames{i}).type,'Electrolyzer')
         block = modelParam.(CompNames{i});
@@ -136,7 +122,7 @@ for i = 1:1:length(CompNames)
     end
 end 
 
-%% Run non-linear model
+%% Run non-linear model to steady state (24 hours)
 options = odeset('RelTol',1e-3);
 IterCount = 1; TagInf =[]; TagFinal =[]; WaitBar.Text = 'Initialization'; WaitBar.Handle=waitbar(0,WaitBar.Text);
 [T, Y] = ode15s(@RunBlocks, [0, SimSettings.RunTime], modelParam.IC,options); disp(strcat('Initialization:',num2str(toc),' seconds'));close(WaitBar.Handle); 
@@ -167,29 +153,27 @@ end
 
 function InletBlock = RefreshInlet(block)
 global modelParam Outlet Tags
-list = modelParam.(block).PortNames;
+list = modelParam.(block).InletPorts;
 for i = 1:1:length(list)
     port = list{i};
-    if strcmp(modelParam.(block).(port).type,'in') 
-        if ~isempty(modelParam.(block).(port).connected)%inlet connected to another outlet
-            BlockPort = modelParam.(block).(port).connected{1};
-            r = strfind(BlockPort,'.');
-            if ~isempty(r)
-                connectedBlock = BlockPort(1:r(1)-1);
-                if strcmp(connectedBlock,'Tags')
-                    connectedBlock = BlockPort(r(1)+1:r(2)-1);
-                    connectedPort = BlockPort(r(2)+1:end);
-                    InletBlock.(port) = Tags.(connectedBlock).(connectedPort);
-                else
-                    connectedPort = BlockPort(r+1:end);
-                    InletBlock.(port) = Outlet.(connectedBlock).(connectedPort);
-                end
+    if ~isempty(modelParam.(block).(port).connected)%inlet connected to another outlet
+        BlockPort = modelParam.(block).(port).connected{1};
+        r = strfind(BlockPort,'.');
+        if ~isempty(r)
+            connectedBlock = BlockPort(1:r(1)-1);
+            if strcmp(connectedBlock,'Tags')
+                connectedBlock = BlockPort(r(1)+1:r(2)-1);
+                connectedPort = BlockPort(r(2)+1:end);
+                InletBlock.(port) = Tags.(connectedBlock).(connectedPort);
             else
-                InletBlock.(port) = feval(BlockPort,0);%finds value of look-up function at time = 0
+                connectedPort = BlockPort(r+1:end);
+                InletBlock.(port) = Outlet.(connectedBlock).(connectedPort);
             end
         else
-            InletBlock.(port) = modelParam.(block).(port).IC; %not connected to an outlet or tag
+            InletBlock.(port) = feval(BlockPort,0);%finds value of look-up function at time = 0
         end
+    else
+        InletBlock.(port) = modelParam.(block).(port).IC; %not connected to an outlet or tag
     end
 end
 

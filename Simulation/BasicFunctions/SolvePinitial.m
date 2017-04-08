@@ -13,9 +13,9 @@ for k = 1:1:length(list) %look at all blocks that have pressure inlets and outle
         r = r+1;
         Port1 = modelParam.(block).P_Difference{i,1}; %The higher pressure term, usually Pin
         Port2 = modelParam.(block).P_Difference{i,2}; %The lower pressure term, usually Pout
-        if strcmp(modelParam.(block).(Port1).type,'out')
+        if any(strcmp(Port1,modelParam.(block).OutletPorts))
             OutPort{r} = {'Port1',block,Port1};
-        elseif strcmp(modelParam.(block).(Port2).type,'out')
+        elseif any(strcmp(Port2,modelParam.(block).OutletPorts))
             OutPort{r} = {'Port2',block,Port2};
         end
         Pdifference(r) = modelParam.(block).(Port1).IC - modelParam.(block).(Port2).IC; %the difference in pressure

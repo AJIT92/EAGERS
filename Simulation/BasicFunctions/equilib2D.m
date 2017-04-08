@@ -1,7 +1,7 @@
 function [Out,R] = equilib2D(InFlow,T,P,H2consume,COconsume,Type,PercEquilib,guess)
 % performs a gradient search to find the minimum gibbs function value for
 % two simultaneous reactions (methane reforming and water gas shift)
-% tolerance is a relative tolence, so that it is more accurat if only a
+% tolerance is a relative tolence, so that it is more accurate if only a
 % small % change in the CH4 and CO is occuring
 %considers only 2 reactions:
 % CH4+H2O <--> CO + 3H2
@@ -14,15 +14,15 @@ s = entropy(T,specInterest);
 spec = fieldnames(InFlow);
 spec = spec(~strcmp('T',spec));
 Out = InFlow; %handles all inert gases (not in specinterest list)
-for k = 1:1:n
+for k = 1:1:n %treat each node independently
     for i = 1:1:length(specInterest)
         g0.(specInterest{i}) = h.(specInterest{i})(k)-T(k).*s.(specInterest{i})(k);
     end
     for i = 1:1:length(spec)
         Inlet.(spec{i}) = InFlow.(spec{i})(k);
     end
-    CH4max = min(InFlow.CH4(k),InFlow.H2O(k));
-    CH4min = -min(InFlow.CO(k),InFlow.H2(k));
+    CH4max = min(InFlow.CH4(k),InFlow.H2O(k)+H2consume(k));
+    CH4min = -min(InFlow.CO(k)-COconsume,(InFlow.H2(k)+InFlow.CO(k)-COconsume-H2consume(k))/4);
     Span1 = CH4max-CH4min;
     if ~isempty(guess)
         x0 = guess(k);
@@ -33,7 +33,7 @@ for k = 1:1:n
         X.CO2 = InFlow.CO2(k) + COconsume(k);
         X.H2 = InFlow.H2(k) + 3*R.CH4(k) - H2consume(k);%hydrogen consumed
         X.H2O = InFlow.H2O(k) - R.CH4(k) + H2consume(k);% water produced
-        if strcmp(Type,'MCFC')
+        if any(strcmp(Type,{'MCFC';'MCEC'}))
             X.CO2 = X.CO2 + H2consume(k); % CO2 brought over
         end
         for i = 1:1:length(spec)
@@ -56,7 +56,7 @@ for k = 1:1:n
     X.CO2 = InFlow.CO2(k) + COconsume(k);
     X.H2 = InFlow.H2(k) + 3*R.CH4(k) - H2consume(k);%hydrogen consumed
     X.H2O = InFlow.H2O(k) - R.CH4(k) + H2consume(k);% water produced
-    if strcmp(Type,'MCFC')
+    if any(strcmp(Type,{'MCFC';'MCEC'}))
         X.CO2 = X.CO2 + H2consume(k); % CO2 brought over
     end
     for i = 1:1:length(spec)
@@ -81,10 +81,10 @@ Out.T = T;
 
 
 function [x0,y0] = Newton2D(Inlet,R_CH4min,R_CH4max,H2consume,COconsume,Type,T,P,g0,x0,y0,Tol)
+%standard 2-D newtonian method (gradient search) for a minimum Gibbs energy
 error = 1e-4;
 count = 0;
 while error>Tol && count<15
-
     e_x = max(.01*error,1e-6);
     if x0+2*e_x>=1
         e_x = .1*(x0-1);
@@ -165,13 +165,14 @@ while error>Tol && count<15
 end
 
 function [X,WGS] = FlowOut(Inlet,x,y,R_CH4min,R_CH4max,H2consume,COconsume,Type)
+%Calculates outlet concentrations without accounting for WGS reaction (done in GibbVal)
 if isempty(R_CH4min)
     CH4 = x;
 else
     CH4 = x*R_CH4max + (1-x)*R_CH4min;
 end
 R_COmin = -min(Inlet.CO2-COconsume,Inlet.H2 + 3*CH4 - H2consume);
-R_COmax = min((Inlet.H2O-CH4),(Inlet.CO+CH4-COconsume));
+R_COmax = min((Inlet.H2O + H2consume - CH4),(Inlet.CO+CH4-COconsume));
 WGS = R_COmin + y*(R_COmax -R_COmin);
 %find exit species not considering WGS
 spec = fieldnames(Inlet);
@@ -183,6 +184,6 @@ X.CO = Inlet.CO + CH4 - COconsume;
 X.CO2 = Inlet.CO2 + COconsume;
 X.H2 = Inlet.H2 + 3* CH4 - H2consume;%hydrogen consumed
 X.H2O = Inlet.H2O - CH4 + H2consume;% water produced
-if strcmp(Type,'MCFC')
+if any(strcmp(Type,{'MCFC';'MCEC'}))
     X.CO2 = X.CO2 + H2consume; % CO2 brought over
 end

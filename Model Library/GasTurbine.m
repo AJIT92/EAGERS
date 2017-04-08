@@ -25,10 +25,9 @@ Plant.Components.FuelSource.connections = {'';'';'Controller.FuelFlow';};
 
 Plant.Components.Comp.type = 'Compressor';
 Plant.Components.Comp.name = 'Comp';
-Plant.Components.Comp.Map = 'RadialCompressorT21'; % Loads a saved compressor map
+Plant.Components.Comp.Map = 'RadialCompressorCalibratedC60'; % Loads a saved compressor map
 Plant.Components.Comp.connections = {'AirSource.Outlet';'';'HX1.ColdPin';'Shaft.RPM';};
 Plant.Components.Comp.Mass = .300;%(kg)
-
 Plant.Components.Comp.PeakEfficiency = 0.7598;
 Plant.Components.Comp.Tdesign = 288;%Design temp(K)
 Plant.Components.Comp.RPMdesign = 96000;%Design RPM
@@ -87,7 +86,7 @@ Plant.Components.Mix1.TagInf = {'MassFlow';'Temperature';};
 
 Plant.Components.Turb.type = 'Turbine';
 Plant.Components.Turb.name = 'Turb';
-Plant.Components.Turb.Map = 'RadialTurbineT23'; % Loads a saved compressor map
+Plant.Components.Turb.Map = 'RadialTurbineCalibratedC60'; % Loads a saved compressor map
 Plant.Components.Turb.PeakEfficiency = 0.7704;
 Plant.Components.Turb.Tdesign = 1200;%Design temp(K)
 Plant.Components.Turb.RPMdesign = 96000;%Design RPM

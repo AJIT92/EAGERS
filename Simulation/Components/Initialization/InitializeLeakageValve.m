@@ -6,13 +6,9 @@ if length(varargin) == 1%first initialization
     block.IC = [];
     block.Scale = [];
     
-    block.PortNames = {'ValvePos','Intake','Flow1','Flow2','Leakage'};
-    
-    block.ValvePos.type = 'in';
+    block.InletPorts = {'ValvePos','Intake'};
     block.ValvePos.IC = 0;
     Inlet.ValvePos = block.ValvePos.IC;
-    
-    block.Intake.type = 'in';
     block.Intake.IC.T = 500;
     block.Intake.IC.N2 = 0.0131;
     block.Intake.IC.O2 = 0.0035;
@@ -28,29 +24,12 @@ if length(varargin) == 1%first initialization
     Out.Flow1.T = Inlet.Intake.T;
     Out.Flow2.T = Inlet.Intake.T;
 
-    block.Flow2.type = 'out';
+    block.OutletPorts = {'Flow1','Flow2','Leakage'};
     block.Flow2.IC = Out.Flow2;
-    
-    block.Leakage.type = 'out';
     block.Leakage.IC = Out.Leakage;
-    
-    block.Flow1.type = 'out';
     block.Flow1.IC = Out.Flow1;
     
     block.P_Difference = {};
-    
-    for i = 1:1:length(block.PortNames)
-        if length(block.connections)<i || isempty(block.connections{i})
-            block.(block.PortNames{i}).connected={};
-        else
-            if ischar(block.connections{i})
-                block.(block.PortNames{i}).connected = block.connections(i);
-            else
-                block.(block.PortNames{i}).IC = block.connections{i};
-                block.(block.PortNames{i}).connected={};
-            end
-        end
-    end
 elseif length(varargin) == 2
     Inlet = varargin{2};
     block.ValvePos.IC = Inlet.ValvePos;

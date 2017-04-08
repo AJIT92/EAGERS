@@ -151,7 +151,6 @@ end
 
 function Change = HasInletChanged(New,Old)
 Change = false;
-
 if isempty(Old)
     Change = true;
 else
@@ -200,43 +199,64 @@ end
 
 function InletBlock = RefreshInlet(block)
 global modelParam Outlet Tags
-list = modelParam.(block).PortNames;
+list = modelParam.(block).InletPorts;
 controls = fieldnames(modelParam.Controls);
 for i = 1:1:length(list)
     port = list{i};
-    if strcmp(modelParam.(block).(port).type,'in') 
-        if ~isempty(modelParam.(block).(port).connected)%inlet connected to another outlet
-            BlockPort = char(modelParam.(block).(port).connected);
-            r = strfind(BlockPort,'.');
-            if ~isempty(r)
-                connectedBlock = BlockPort(1:r-1);
-                if strcmp(connectedBlock,'Tags')
-                    connectedBlock = BlockPort(r(1)+1:r(2)-1);
-                    connectedPort = BlockPort(r(2)+1:end);
-                    InletBlock.(port) = Tags.(connectedBlock).(connectedPort);
-                else
-                    connectedPort = BlockPort(r+1:end);
-                    if isfield(Outlet.(connectedBlock),connectedPort)
-                        InletBlock.(port) = Outlet.(connectedBlock).(connectedPort);
-                    else InletBlock.(port) = modelParam.(connectedBlock).(connectedPort).IC;
-                    end
-                end
+    if ~isempty(modelParam.(block).(port).connected)%inlet connected to another outlet
+        BlockPort = char(modelParam.(block).(port).connected);
+        r = strfind(BlockPort,'.');
+        if ~isempty(r)
+            connectedBlock = BlockPort(1:r-1);
+            if strcmp(connectedBlock,'Tags')
+                connectedBlock = BlockPort(r(1)+1:r(2)-1);
+                connectedPort = BlockPort(r(2)+1:end);
+                InletBlock.(port) = Tags.(connectedBlock).(connectedPort);
             else
-                InletBlock.(port) = feval(BlockPort,0);%finds value of look-up function at time = 0
-            end
-            %%forced interupt between controller and component ports when linearizing model
-            if ismember(connectedBlock,controls) && ~ismember(block,controls)
-                if isfield(Tags.Options,'AssignedInputs') && Tags.Options.AssignedInputs == 1
-                    InletBlock.(port) = Tags.ModelInput.(connectedBlock).(connectedPort);%assign inputs
-                else
-                    Tags.ModelInput.(connectedBlock).(connectedPort) = InletBlock.(port);%Collect inputs to model (outputs from controller)
+                connectedPort = BlockPort(r+1:end);
+                if isfield(Outlet.(connectedBlock),connectedPort)
+                    InletBlock.(port) = Outlet.(connectedBlock).(connectedPort);
+                else InletBlock.(port) = modelParam.(connectedBlock).(connectedPort).IC;
                 end
-            end
-            if ismember(block,controls) %&& ~ismember(connectedBlock,fieldnames(modelParam.Controls))
-                Tags.ModelOutput.(block).(port) = InletBlock.(port);%collect outputs of model (inputs to controller)
             end
         else
-            InletBlock.(port) = modelParam.(block).(port).IC;
+            InletBlock.(port) = feval(BlockPort,0);%finds value of look-up function at time = 0
+        end
+        %%forced interupt between controller and component ports when linearizing model
+        if ismember(connectedBlock,controls) && ~ismember(block,controls)
+            if isfield(Tags.Options,'AssignedInputs') && Tags.Options.AssignedInputs == 1
+                InletBlock.(port) = Tags.ModelInput.(connectedBlock).(connectedPort);%assign inputs
+            else
+                Tags.ModelInput.(connectedBlock).(connectedPort) = InletBlock.(port);%Collect inputs to model (outputs from controller)
+            end
+        end
+        if ismember(block,controls) %&& ~ismember(connectedBlock,fieldnames(modelParam.Controls))
+            Tags.ModelOutput.(block).(port) = InletBlock.(port);%collect outputs of model (inputs to controller)
+        end
+    else
+        InletBlock.(port) = modelParam.(block).(port).IC;
+    end
+end
+
+function yesNan = IsInletNaN(Inlet)
+%% use to help find algebraic loops during initialization
+yesNan = false;
+list2 = fieldnames(Inlet);
+for i = 1:1:length(list2)
+    port = list2{i};
+    if isnumeric(Inlet.(port))
+        yesNan = isnan(Inlet.(port));
+    elseif isstruct(Inlet.(port))
+        f = fieldnames(Inlet.(port));
+        for j = 1:1:length(f)
+            if isnumeric(Inlet.(port).(f{j}))
+                yesNan =isnan(Inlet.(port).(f{j}));
+            else
+                g = fieldnames(Inlet.(port).(f{j}));
+                for k = 1:1:length(g)
+                    yesNan = isnan(Inlet.(port).(f{j}).(g{k}));
+                end
+            end
         end
     end
 end

@@ -1,4 +1,5 @@
 function CurrentMap(Y,block,FigNum)
+% plots the fuel cell or electrolyzer current distribution
 columns = block.columns;
 rows = block.rows;
 nodes = block.nodes;

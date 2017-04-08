@@ -1,9 +1,10 @@
 function block = InitializeFuelCell(varargin)
-%FC model with many states: Temperatures (oxidizer plate, cathode, electrolyte, anode, fuel plate [possibly a reformer]), Cathode species, anode species (can include anode recirculation for humidification, [reformer: indirect, adiabatic or none], Current, cathode pressure, anode pressure
-% Five (5) inlets: {'NetCurrent','CathodeIn','AnodeIn','Flow1Pout','Flow2Pout'}
+% Spatially & Temporally resolved dynamic FC model 
+% Five (5) inlets: {'NetCurrent','Flow1','Flow2','Flow1Pout','Flow2Pout'}
 % Seven (7) outlets: {'Flow1Out','Flow2Out','Flow1Pin','Flow2Pin','MeasureCurrent','MeasureTpen','MeasureTflow1','MeasureTflow2'}
 % for a fuel cell, Flow 1 is the anode (fuel), and Flow2 is the cathode (cooling/heating air)
-% Current is positive
+% Current is positive for fuel cell, negative for electrolyzer
+% order of states is generally: Temperatures (oxidizer plate, cathode, electrolyte, anode, fuel plate, [possibly a reformer]), Cathode species, anode species (can include anode recirculation for humidification, [reformer: indirect, adiabatic or none], Current, cathode pressure, anode pressure
 global F Ru
 F=96485.339; % %Faraday's constant in Coulomb/mole
 Ru = 8.314472; % Universal gas constant in kJ/K*kmol
@@ -122,10 +123,6 @@ if length(varargin)==1 % first initialization
             block.Vol_flow3=block.H_Reform*block.W_Reform*block.CH_Flow3*block.L_node; % (m^3) Volume of Reformer Channel in cell
             block.flow3_crossArea=block.H_Reform*block.W_Reform*block.CH_Flow3;     % (m^2) Reformer Channel Area per node
             block.h_flow3=block.Nu_Reform*block.k_Ref_Channel/block.Dh_Flow3;                     % [W/m2/K]  Convection coefficient between the anode gas and the Fuel Seperator plate   
-%         case 'adiabatic'
-%             block.Vol_flow3 = .01;        % [m^3] volume
-%             block.C_Reformer = .600;       % [kJ/(kg K)] specific heat of fuel seperator plate
-%             block.M_Reformer = 20;         % [kg] mass of reformer
         case {'external';'direct';'pox';'adiabatic';}
             block = FlowDir(block,2); %% Load flow direction
     end
@@ -167,6 +164,25 @@ if length(varargin)==1 % first initialization
     block.Current.CO = 0*Current;
     block.Current.H2 = Current;
     
+    FuelFlow  = sum(Current)/(2*F*1000)/(block.FuelUtilization*(4*block.Fuel.CH4+block.Fuel.CO+block.Fuel.H2)); % fuel flow rate,  current/(2*F*1000) = kmol H2
+    block.Recirc.Anode = anodeRecircHumidification(block.Fuel,FuelFlow,0.7,block.Steam2Carbon,sum(Current)/(2*F*1000),0.5);
+
+    if any(strcmp(block.Reformer,{'external';'adiabatic'})) %% pre-humidify fuel in these cases
+        if strcmp(block.Reformer,'external')
+            R1 = ComponentProperty('Reformer.ReformTarget')*block.Fuel.CH4;
+        elseif strcmp(block.Reformer,'adiabatic')
+            R1 = 0.5*block.Fuel.CH4;
+        end
+        nOut = (1+block.Steam2Carbon*(block.Fuel.CH4+0.5*block.Fuel.CO) + 2*R1);
+        ReformedFuel.CH4 = (block.Fuel.CH4 - R1)/nOut;
+        ReformedFuel.CO = (block.Fuel.CO + .2*R1)/nOut;
+        ReformedFuel.CO2 = (block.Fuel.CO2 + .8*R1)/nOut;
+        ReformedFuel.H2 = (block.Fuel.H2 + 3.8*R1)/nOut;
+        ReformedFuel.H2O = (block.Fuel.H2O+block.Steam2Carbon*(block.Fuel.CH4+0.5*block.Fuel.CO) - 1.8*R1)/nOut;
+        ReformedFuel.N2 = block.Fuel.N2/nOut;
+        block.Fuel = ReformedFuel; %initial fuel composition at inlet
+    end
+    
     block.StackCathTin  = block.TpenAvg -.75*block.deltaTStack;
     block.T.Flow2 = zeros(block.nodes,1) + block.TpenAvg;
     block.T.Elec = zeros(block.nodes,1) + block.TpenAvg;
@@ -183,22 +199,12 @@ if length(varargin)==1 % first initialization
     end
     R1 = block.Fuel.CH4*block.AnPercEquilib*block.FuelFlowInit;
     switch block.Reformer
-        case 'external'
-            CH4ref_ext = block.RefPerc*R1;
-            block.R_WGSref =  CH4ref_ext*.8;
-            block.R_CH4 = (R1 - CH4ref_ext)/block.Cells*ones(block.nodes,1)/block.nodes;
-            block.R_WGS = block.R_CH4*.8;
         case 'internal'
             block.R_CH4ref = block.RefPerc*R1/block.Cells*block.RefSpacing*ones(block.nodes,1)/block.nodes;
             block.R_WGSref =  block.R_CH4ref*.8;
             block.R_CH4 = (R1 - sum(block.R_CH4ref)*block.Cells/block.RefSpacing)/block.Cells*ones(block.nodes,1)/block.nodes;
             block.R_WGS = block.R_CH4*.8;
-        case 'adiabatic'
-            block.R_CH4ref = 0.5*R1;
-            block.R_WGSref =  block.R_CH4ref*.8;
-            block.R_CH4 = (R1 - block.R_CH4ref)/block.Cells*ones(block.nodes,1)/block.nodes;
-            block.R_WGS = block.R_CH4*.8;
-        case 'direct'
+        case {'external';'adiabatic';'direct'}
             block.R_CH4 = R1/block.Cells*ones(block.nodes,1)/block.nodes;
             block.R_WGS =  block.R_CH4*.8;
     end 
@@ -251,54 +257,7 @@ if length(varargin)==1 % first initialization
     end
     block.Spec1 = unique([block.Spec1;criticalSpecies]);
     Inlet.Flow1.T = FuelTempIn;
-    Inlet.Mixed = Inlet.Flow1;
-    S2C = block.Fuel.H2O/(block.Fuel.CH4+.5*block.Fuel.CO);
-    if S2C<block.Steam2Carbon %add anode recirculation
-        Inlet.Flow1.T = 300;%mixing provides humidification & pre-heat
-        Inlet.Mixed.CH4 = block.Fuel.CH4*block.FuelFlowInit;
-        eWGS = .7; %initial guess of effective CO conversion
-        r = 0.5; %Initial guess of anode recirculation
-        dr = 1e-5;
-        error = 1;
-        % Inlet = (Inlet + generated - consumed)*r  + New, thus inlet = New/(1-r) + (generated - consumed)*r/(1-r)
-        while abs(error)>1e-6
-            Inlet.Mixed.CO = block.Fuel.CO*block.FuelFlowInit/(1-r) + (block.Fuel.CH4 - eWGS*(block.Fuel.CH4+block.Fuel.CO))*block.FuelFlowInit*r/(1-r);
-            Inlet.Mixed.H2O = block.Fuel.H2O*block.FuelFlowInit/(1-r) + (block.Cells*sum(Current)/(2*F*1000) - (block.Fuel.CH4 + (block.Fuel.CH4 + block.Fuel.CO)*eWGS)*block.FuelFlowInit)*r/(1-r);
-            S2C = Inlet.Mixed.H2O/(Inlet.Mixed.CH4 + 0.5*Inlet.Mixed.CO);
-            error = block.Steam2Carbon - S2C;
-            r2 = r+dr;
-            COin2 = block.Fuel.CO*block.FuelFlowInit/(1-r2) + (block.Fuel.CH4 - eWGS*(block.Fuel.CH4+block.Fuel.CO))*block.FuelFlowInit*r2/(1-r2);
-            H2Oin2 = block.Fuel.H2O*block.FuelFlowInit/(1-r2) + (block.Cells*sum(Current)/(2*F*1000) - (block.Fuel.CH4 + (block.Fuel.CH4 + block.Fuel.CO)*eWGS)*block.FuelFlowInit)*r2/(1-r2);
-            S2C2 = H2Oin2/(Inlet.Mixed.CH4 + 0.5*COin2);
-            dSdr = (S2C2 - S2C)/dr;
-            r = r + max(-.5*r,min((1-r)/2,error/dSdr));
-        end
-        block.Recirc.Anode = r;
-        Inlet.Mixed.CO2 = block.Fuel.CO2*block.FuelFlowInit/(1-r) + eWGS*(block.Fuel.CH4+block.Fuel.CO)*block.FuelFlowInit*r/(1-r);
-        Inlet.Mixed.H2 = block.Fuel.H2*block.FuelFlowInit/(1-r) + ((3*block.Fuel.CH4 + (block.Fuel.CH4 + block.Fuel.CO)*eWGS)*block.FuelFlowInit - block.Cells*sum(Current)/(2*F*1000))*r/(1-r);
-        for i = 1:1:length(block.Spec1)
-            if ~ismember(block.Spec1{i},criticalSpecies)
-                Inlet.Mixed.(block.Spec1{i}) = block.Fuel.(block.Spec1{i})*block.FuelFlowInit/(1-r);
-            end
-            Flow1Outlet.(block.Spec1{i}) = Inlet.Mixed.(block.Spec1{i}) - Inlet.Flow1.(block.Spec1{i});
-        end
-        %%find resulting temperature of mixture
-        errorT = 1;
-        Inlet.Mixed.T = FuelTempIn;
-        Flow1Outlet.T = block.TpenAvg + .5*block.deltaTStack;
-        Hin = enthalpy(Inlet.Flow1);
-        Hout = enthalpy(Flow1Outlet);
-        Hnet = Hin + block.Recirc.Anode*Hout;
-        Cp = SpecHeat(Flow1Outlet);
-        NetFlowMix = NetFlow(Inlet.Mixed);
-        while abs(errorT)>1e-3
-            Hmix = enthalpy(Inlet.Mixed);
-            errorT = (Hnet-Hmix)/(Cp*NetFlowMix);
-            Inlet.Mixed.T = Inlet.Mixed.T + errorT;
-        end 
-    else
-        block.Recirc.Anode = 0;
-    end
+    Inlet.Mixed = Inlet.Flow1;%     %%during first initialization it calculates the anode re-cycle and inlet mixing if the fuel is not pre-humidified
     block.T.FuelMix = Inlet.Mixed.T;
     
     Inlet.Flow2Pout = block.Flow2_Pout;
@@ -315,16 +274,11 @@ if length(varargin)==1 % first initialization
     block.AirFlow = block.Cells*sum(Current)/(4*F*block.Flow2Spec.O2)/1000/block.OxidantUtilization;%kmol of oxidant
 
     block.Spec2 = fieldnames(block.Flow2Spec);
-    if block.ClosedCathode
-        block.Spec2 = {}; %no cathode flow states
-        criticalSpecies = {};
-    else
-        switch block.FCtype
-            case 'SOFC'
-                criticalSpecies = {'O2';'N2';};
-            case 'MCFC'
-                criticalSpecies = {'CO2';'H2O';'O2';'N2';};
-        end
+    switch block.FCtype
+        case 'SOFC'
+            criticalSpecies = {'O2';};
+        case 'MCFC'
+            criticalSpecies = {'CO2';'O2';};
     end
     Inlet = InletFlow(block,Inlet);
     for i = 1:1:length(criticalSpecies)
@@ -332,7 +286,7 @@ if length(varargin)==1 % first initialization
             Inlet.Flow2.(criticalSpecies{i}) = 0;
         end
     end
-    block.Spec2 = unique([block.Spec2,criticalSpecies]);
+    block.Spec2 = unique([block.Spec2;criticalSpecies]);
     %% Run Initial Condition
     [Flow1,Flow2,block,Inlet] = solveInitCond(Inlet,block,1);
     
@@ -340,67 +294,28 @@ if length(varargin)==1 % first initialization
         block.Reformer = 'direct'; %external and adiabatic reformers handled in seperate block, after 1st initialization
     end
     %% set up ports : Inlets need to either connected or have initial condition, outlets need an initial condition, and it doesn't matter if they have a connection 
-    block.PortNames = {'NetCurrent','Flow1','Flow2','Flow1Pout','Flow2Pout','Flow1Out','Flow2Out','Flow2Pin','Flow1Pin','MeasureVoltage','MeasurePower','MeasureTpen','MeasureTflow1','MeasureTflow2'};
-    block.NetCurrent.type = 'in';
+    block.InletPorts = {'NetCurrent','Flow1','Flow2','Flow1Pout','Flow2Pout'};
     block.NetCurrent.IC = sum(block.Current.H2 + block.Current.CO);
-
-    block.Flow1.type = 'in';
     block.Flow1.IC = Inlet.Flow1; 
-
-    block.Flow2.type = 'in';
     block.Flow2.IC = Inlet.Flow2;
-    
-    block.Flow1Pout.type = 'in';
     block.Flow1Pout.IC = Inlet.Flow1Pout;
     block.Flow1Pout.Pstate = []; %identifies the state # of the pressure state if this block has one
-
-    block.Flow2Pout.type = 'in';
     block.Flow2Pout.IC = Inlet.Flow2Pout;
     block.Flow2Pout.Pstate = []; %identifies the state # of the pressure state if this block has one
 
-    block.Flow1Out.type = 'out';
+    block.OutletPorts = {'Flow1Out','Flow2Out','Flow2Pin','Flow1Pin','MeasureVoltage','MeasurePower','MeasureTflow1','MeasureTflow2'};
     block.Flow1Out.IC = MergeLastColumn(Flow1.Outlet,block.Flow1Dir,block.Cells);
-    
-    block.Flow2Out.type = 'out';
     block.Flow2Out.IC  = MergeLastColumn(Flow2.Outlet,block.Flow2Dir,block.Cells);
-
-    block.Flow1Pin.type = 'out';
     block.Flow1Pin.IC = block.Flow1_Pinit;
     block.Flow1Pin.Pstate = length(block.Scale)-1; %identifies the state # of the pressure state if this block has one
-
-    block.Flow2Pin.type = 'out';
     block.Flow2Pin.IC = block.Flow2_Pinit;
     block.Flow2Pin.Pstate = length(block.Scale); %identifies the state # of the pressure state if this block has one
-
-    block.MeasureVoltage.type = 'out';
     block.MeasureVoltage.IC = block.Voltage;
-
-    block.MeasurePower.type = 'out';
     block.MeasurePower.IC = sum((block.Current.H2 + block.Current.CO)*block.Voltage*block.Cells)/1000;%power in kW
-
-    block.MeasureTpen.type = 'out';
-    block.MeasureTpen.IC = block.T.Elec;
-
-    block.MeasureTflow1.type = 'out';
     block.MeasureTflow1.IC = block.T.Flow1(block.Flow1Dir(:,end));
-    
-    block.MeasureTflow2.type = 'out';
     block.MeasureTflow2.IC = block.T.Flow2(block.Flow2Dir(:,end));
 
     block.P_Difference = {'Flow2Pin','Flow2Pout'; 'Flow1Pin', 'Flow1Pout';};
-
-    for i = 1:1:length(block.PortNames)
-        if length(block.connections)<i || isempty(block.connections{i})
-            block.(block.PortNames{i}).connected={};
-        else
-            if ischar(block.connections{i})
-                block.(block.PortNames{i}).connected = block.connections(i);
-            else
-                block.(block.PortNames{i}).IC = block.connections{i};
-                block.(block.PortNames{i}).connected={};
-            end
-        end
-    end
 elseif length(varargin)==2 %% Have inlets connected, re-initialize
     Inlet = varargin{2};
     block.Specification = 'current density';%converge only to match current density from controller
@@ -415,20 +330,16 @@ elseif length(varargin)==2 %% Have inlets connected, re-initialize
         end
     end
     block.Spec1 = Flow1All;
-
-    if block.ClosedCathode
-        block.Spec2 = {}; %no cathode flow states
-    else
-        Flow2New = fieldnames(Inlet.Flow2);
-        Flow2All = unique([block.Spec2;Flow2New]);
-        Flow2All = Flow2All(~strcmp('T',Flow2All));
-        for i = 1:1:length(Flow2All)
-            if ~ismember(Flow2All{i},Flow2New)
-                Inlet.Flow2.(Flow2All{i})=0;
-            end
+    
+    Flow2New = fieldnames(Inlet.Flow2);
+    Flow2All = unique([block.Spec2;Flow2New]);
+    Flow2All = Flow2All(~strcmp('T',Flow2All));
+    for i = 1:1:length(Flow2All)
+        if ~ismember(Flow2All{i},Flow2New)
+            Inlet.Flow2.(Flow2All{i})=0;
         end
-        block.Spec2 = Flow2All;
     end
+    block.Spec2 = Flow2All;
     block.Flow1_Pinit = Inlet.Flow1Pout + block.Flow1Pdrop;
     block.Flow2_Pinit = Inlet.Flow2Pout + block.Flow2Pdrop;
     block.Flow2Pout.IC = Inlet.Flow2Pout;
@@ -451,21 +362,21 @@ elseif length(varargin)==2 %% Have inlets connected, re-initialize
 end
 
 function [Flow1,Flow2,block,Inlet] = solveInitCond(Inlet,block,firstSolve)
-global Tags F
+global F
 error = 1;
 Tol = 1e-3;
 count = 1;
 while abs(error)>Tol %iterate to reach target current density, voltage or power density
     Flow2 = FCin2Out(block.T.Flow2,Inlet.Flow2,block.Flow2Dir, block.FCtype,block.Cells,block.Current,[],'cathode');
 %     SinglePassUtilization = (sum(block.Current)*block.Cells/(2000*F))/(4*Inlet.Mixed.CH4+Inlet.Mixed.CO + Inlet.Mixed.H2);
-    [block,Inlet.Mixed,Flow1,Flow3] = KineticCoef(block,Inlet,((firstSolve==1) && (count==1)));%% solve for kinetic reaction coefficient which results in this outlet condition (match R_CH4 & R_WGS)
+    [block,Inlet.Mixed,Flow1,Flow3] = KineticCoef(block,Inlet,(firstSolve==1),(count==1));%% solve for kinetic reaction coefficient which results in this outlet condition (match R_CH4 & R_WGS)
     Offset = 0;
     if count==1 && firstSolve==1
         [block.Tstates,block.HTcond,block.HTconv,block.HTrad]= SteadyTemps(block,Inlet.Mixed,Inlet.Flow2);
     else
         [~, Y] = ode15s(@(t,y) DynamicTemps(t,y,block,Flow1,Flow2,Flow3,Inlet), [0, 1e4], block.Tstates);
         block.Tstates = Y(end,:)';
-        if firstSolve==1 && abs(mean(block.Tstates(2*block.nodes+1:3*block.nodes))-block.TpenAvg)>10 %temperature in solve dynamic is diverging to much (1300K), and messing up reforming solution (this is a temporary fix
+        if firstSolve==1 && abs(mean(block.Tstates(2*block.nodes+1:3*block.nodes))-block.TpenAvg)>10 %temperature in solve dynamic is diverging too much (1300K), and messing up reforming solution (this is a temporary fix
             Offset = (mean(block.Tstates(2*block.nodes+1:3*block.nodes))-block.TpenAvg);
         end
     end
@@ -477,59 +388,23 @@ while abs(error)>Tol %iterate to reach target current density, voltage or power 
     switch block.Reformer
         case 'internal'
             block.T.Flow3 = block.Tstates(5*block.nodes+1:6*block.nodes) - Offset;
-        case 'adiabatic'
-            block.T.Flow3 =  Flow3.Outlet.T; %1 temperature state of reformer before anode outlet
     end
     T = block.TpenAvg + (block.T.Elec-mean(block.T.Elec)); %assume you will get to the desired temperature (this avoids oscilations in voltage and helps convergence
     FuelCellNernst(Flow1,Flow2,block.Current,T,block.Flow2_Pinit,block);
-    %% calculate the change in current to converge to the desired power density, voltage, or current
-    OldVoltage = block.Voltage;
-    block.Voltage = sum(Tags.(block.name).nVoltage)/block.nodes;
-    block.Current.CO = Tags.(block.name).I_CO;
-    block.Current.H2 = Tags.(block.name).I_H2;
-    netCurrent = block.Current.H2+block.Current.CO;
-    TotCurrent = sum(netCurrent);
-    localR = Tags.(block.name).LocalOhmic./(block.Current.H2+block.Current.CO);
-    if strcmp(block.Specification,'power density')
-        error = (block.RatedStack_kW - Tags.(block.name).Power)/block.RatedStack_kW;
-        if count>1
-            if firstSolve==1 && error>1e-3
-                dP_di = max(.7*(Tags.(block.name).Power - OldCurrent*OldVoltage*block.Cells/1000)/(TotCurrent - OldCurrent),.7*Tags.(block.name).Power/(TotCurrent));%change in power with change in current
-            else
-                dP_di = max(1.15*((Tags.(block.name).Power - OldCurrent*OldVoltage*block.Cells/1000)/(TotCurrent - OldCurrent)),.7*Tags.(block.name).Power/(TotCurrent));
-            end
-            scale = 1+ error*block.RatedStack_kW/dP_di/TotCurrent;
-        else % first time through
-            scale = (block.RatedStack_kW*1000/block.Cells/block.Voltage)/TotCurrent; %total current it should have at this new voltage/ total current specified right now
+    [block,error,scale] = redistributeCurrent(block,Inlet,count,firstSolve);%% calculate the change in current to converge to the desired power density, voltage, or current
+    TotCurrent = abs(sum(block.Current.H2 + block.Current.CO));
+    
+    if block.ClosedCathode % Ensure there is enough oxidant so Flow2 does not go negative
+        Inlet.Flow2.O2 = block.Cells*TotCurrent/(4000*F*block.Flow2Spec.O2)/block.OxidantUtilization;%kmol of oxidant
+        if any(strcmp(block.FCtype,{'MCFC';'MCEC'}))
+            Inlet.Flow2.CO2 = block.Cells*TotCurrent/(2000*F*block.Flow2Spec.O2)/block.OxidantUtilization;%kmol of oxidant
         end
-    elseif strcmp(block.Specification,'voltage')
-        Tol = 1e-3;
-        error = (block.SpecificationValue - block.Voltage)/block.Voltage;
-        if count>1
-            dV_di = -Tags.(block.name).ASR/block.A_Node/100^2;
-            scale = 1 + (block.SpecificationValue - block.Voltage)/dV_di/TotCurrent;
-        else % first time through
-            localR = 3*localR;
-            scale =1+sum((Tags.(block.name).nVoltage-block.SpecificationValue)./localR)/TotCurrent;
-        end
-        block.Cells = ceil((block.RatedStack_kW*1000/block.SpecificationValue)/(scale*TotCurrent)); %re-calculate the # of cells
-    elseif strcmp(block.Specification,'current density')
-        scale = Inlet.NetCurrent/TotCurrent;
-        error = (TotCurrent - Inlet.NetCurrent)/TotCurrent;
     end
-    
-    OldCurrent = sum(netCurrent);
-    ratio = block.Current.CO./netCurrent;
-    netCurrent = redistributeCurrent(netCurrent,scale,Tags.(block.name).nVoltage,localR,block.Voltage); %% start by maintaining same current in each row, then allow row voltages to balance (prevents fuel starvation in a row during initialization)
-    block.Current.CO = ratio.*netCurrent;
-    block.Current.H2 = (1-ratio).*netCurrent;
-    TotCurrent = sum(netCurrent);
-    
     if firstSolve ==1 %solving block to convergence without other blocks or controller
         block.R_CH4 = scale*block.R_CH4;
         block.R_WGS = scale*block.R_WGS;
         switch block.Reformer
-            case {'internal';'adiabatic'}
+            case 'internal';
                 block.R_CH4ref = scale*block.R_CH4ref;% fuel flow scales with current so assume reforming will
                 block.R_WGSref = scale*block.R_WGSref;
         end
@@ -549,11 +424,11 @@ while abs(error)>Tol %iterate to reach target current density, voltage or power 
                 Hout2 = enthalpy(Flow2.Outlet);
                 Hin3 = enthalpy(Flow3.Inlet);
                 Hout3 = enthalpy(Flow3.Outlet);
-                Power = block.Voltage*netCurrent/1000; %cell power in kW
+                Power = block.Voltage*(block.Current.H2 + block.Current.CO)/1000; %cell power in kW
                 Qimbalance = sum((Hin2 - Hout2) + (Hin1 - Hout1) + (Hin3 - Hout3) - Power);
                 h = enthalpy(mean(block.T.Flow3),{'H2','H2O','O2','CO','CO2','CH4'});
                 Qreform = (h.CO+3*h.H2-h.CH4-h.H2O) + 0.8*(h.CO2+h.H2-h.CO-h.H2O); %kW of cooling per kmol of fuel
-                ExtraFuel = 0.25*Qimbalance*block.Cells/Qreform/block.Fuel.CH4;
+                ExtraFuel = 0.75*Qimbalance*block.Cells/Qreform/block.Fuel.CH4;
                 error = max(abs(error),abs(Qimbalance/sum(Power)));
             else
                 ExtraFuel = 0;
@@ -646,8 +521,8 @@ block.tC(1:n) = block.tC(1:n)-diag(block.HTconv)-diag(block.HTcond); %this accou
 for i = 1:1:length(block.Spec2)
     block.tC(n+1:n+block.nodes) = (block.Vol_flow2*block.Flow2_Pinit)./(block.T.Flow2*Ru);  % cathode 
     if any(Flow2.Outlet.(block.Spec2{i})==0)
-        block.IC(n+1:n+block.nodes) = Flow2.Outlet.(block.Spec2{i})./NetFlow(Flow2.Outlet);
-        block.Scale(n+1:n+block.nodes) = NetFlow(Flow2.Outlet); n = n+block.nodes; %cathode flows
+        block.IC(n+1:n+block.nodes) = Flow2.Outlet.(block.Spec2{i})./max(NetFlow(Flow2.Outlet));
+        block.Scale(n+1:n+block.nodes) = max(NetFlow(Flow2.Outlet)); n = n+block.nodes; %cathode flows
     else
         block.Scale(n+1:n+block.nodes) = Flow2.Outlet.(block.Spec2{i}); n = n+block.nodes; %cathode flows
     end
@@ -742,7 +617,7 @@ Hin2 = enthalpy(Flow2.Inlet);
 Hout1 = enthalpy(Flow1.Outlet);
 HfreshFuel = enthalpy(Inlet.Flow1);
 
-if block.Recirc.Anode>0 % Only during the first run with unhumidified fuel, find fuelmix temperature
+if any(strcmp(block.Reformer,{'internal';'direct'})) && block.Recirc.Anode>0 % Only during the first run with unhumidified fuel, find fuelmix temperature
     error2 = 1;
     Cp = SpecHeat(Flow1.Outlet); 
     Cp = Cp(end);

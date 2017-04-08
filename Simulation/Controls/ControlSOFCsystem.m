@@ -30,24 +30,7 @@ if block.AnodeRecirc.IC == 0
     Recirculation = 0;
 else
     Steam2Carbon = block.Target(3);
-    CH4 = block.Fuel.CH4*FuelFlow;
-    r = block.AnodeRecirc.IC; %Initial guess of anode recirculation
-    dr = 1e-6;
-    error = 1;
-    % Inlet = (Inlet + generated - consumed)*r  + New, thus inlet = New/(1-r) + (generated - consumed)*r/(1-r)
-    while abs(error)>1e-6
-        COin = block.Fuel.CO*FuelFlow/(1-r) + (block.Fuel.CH4 - block.WGSeffective*(block.Fuel.CH4+block.Fuel.CO))*FuelFlow*r/(1-r);
-        Inlet.FuelMix.H2O = block.Fuel.H2O*FuelFlow/(1-r) + (block.Cells*Current /(2*F*1000) - (block.Fuel.CH4 + (block.Fuel.CH4 + block.Fuel.CO)*block.WGSeffective)*FuelFlow)*r/(1-r);
-        S2C = Inlet.FuelMix.H2O/(CH4 + 0.5*COin);
-        error = Steam2Carbon - S2C;
-        r2 = r+dr;
-        COin2 = block.Fuel.CO*FuelFlow/(1-r2) + (block.Fuel.CH4 - block.WGSeffective*(block.Fuel.CH4+block.Fuel.CO))*FuelFlow*r2/(1-r2);
-        H2Oin2 = block.Fuel.H2O*FuelFlow/(1-r2) + (block.Cells*Current/(2*F*1000) - (block.Fuel.CH4 + (block.Fuel.CH4 + block.Fuel.CO)*block.WGSeffective)*FuelFlow)*r2/(1-r2);
-        S2C2 = H2Oin2/(CH4 + 0.5*COin2);
-        dSdr = (S2C2 - S2C)/dr;
-        r = r + error/dSdr;
-    end
-    Recirculation = r;
+    Recirculation = anodeRecircHumidification(block.Fuel,FuelFlow,block.WGSeffective,Steam2Carbon,block.Cells*Current/(2*F*1000),block.AnodeRecirc.IC);
 end
     
 if strcmp(string1,'Outlet')

@@ -28,57 +28,39 @@ if length(varargin)==1 % first initialization
     block.AmbConv = 5; % Ambient Convection Coefficient
     block.AmbEpsilon = .8; %Ambient Radiation Epsilon
     block.AmbSigma = 5.67e-8; %Ambient Radiation Sigma
-    
-    
-    
+
     %% set up ports : Inlets need to either connected or have initial condition, outlets need an initial condition, and it doesn't matter if they have a connection 
-    block.PortNames = {'Air','Fuel','Pout','Bypass','Main','Pin'};
-    block.Air.type = 'in';
+    block.InletPorts = {'Air','Fuel','Pout'};
+    
     block.Air.IC.T = 700;
     block.Air.IC.N2 = .79;
     block.Air.IC.O2 = .21;
     
-    block.Fuel.type = 'in';
     block.Fuel.IC.T = 700;
     block.Fuel.IC.CH4 = 0.9;
     block.Fuel.IC.CO = 0.05;
     block.Fuel.IC.CO2 = 0.03;
     block.Fuel.IC.N2 = 0.02;
     
-    block.Pout.type = 'in';
     block.Pout.IC = 100;
     block.Pout.Pstate = []; %identifies the state # of the pressure state if this block has one
     
-    block.Bypass.type = 'out';
+    block.OutletPorts = {'Bypass','Main','Pin'};
+    
     block.Bypass.IC.T = 1000;
     block.Bypass.IC.N2 = 0.79;
     block.Bypass.IC.O2 = 0.21;
     
-    block.Main.type = 'out';
     block.Main.IC.T = 2000;
     block.Main.IC.H2O = 0.1;
     block.Main.IC.N2 = .75;
     block.Main.IC.O2 = .15;
     
-    block.Pin.type = 'out';
     block.Pin.IC = block.Pout.IC+block.Pdrop;
     block.Pin.Pstate = 5; %identifies the state # of the pressure state if this block has one
 
     block.P_Difference = {'Pin','Pout'};
     %no dMdP or mFlow (fixed pressure drop)
-
-    for i = 1:1:length(block.PortNames)
-        if length(block.connections)<i || isempty(block.connections{i})
-            block.(block.PortNames{i}).connected={};
-        else
-            if ischar(block.connections{i})
-                block.(block.PortNames{i}).connected = block.connections(i);
-            else
-                block.(block.PortNames{i}).IC = block.connections{i};
-                block.(block.PortNames{i}).connected={};
-            end
-        end
-    end
 elseif length(varargin)==2 %% Have inlets connected, re-initialize
     Inlet = varargin{2};
     Bypass = 1 - (2*Inlet.Fuel.CH4+.5*Inlet.Fuel.CO+.5*Inlet.Fuel.H2)/(Inlet.Air.O2*block.EquivSet);

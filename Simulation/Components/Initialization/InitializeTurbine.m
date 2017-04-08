@@ -42,9 +42,7 @@ if length(varargin)==1 % first initialization
     C = (dMdP*101*block.Pdesign-block.mFlow)/101;
     block.dMdP = [dMdP, C];
     %%
-    block.PortNames = {'FlowIn','Pout','RPMin','Pin','Outlet','PowerTurb','TET'};
-
-    block.FlowIn.type = 'in';
+    block.InletPorts = {'FlowIn','Pout','RPMin'};
     block.FlowIn.IC.T = block.Tdesign;
     block.FlowIn.IC.CO2 = 0.1;
     block.FlowIn.IC.H2O = 0.1;
@@ -57,44 +55,21 @@ if length(varargin)==1 % first initialization
             block.FlowIn.IC.(specFlow{i}) = block.FlowIn.IC.(specFlow{i})*block.FlowDesign/mMass;
         end
     end
-
-    block.Pout.type = 'in';
     block.Pout.IC = 101;%in kPa
     block.Pout.Pstate = []; %identifies the state # of the pressure state if this block has one
-    
-    block.RPMin.type = 'in';
     block.RPMin.IC = block.RPMdesign;
 
-    block.Pin.type = 'out';
+    block.OutletPorts = {'Pin','Outlet','PowerTurb','TET'};
     block.Pin.IC = 101*block.Pdesign;%in kPa
     block.Pin.Pstate = 3; %identifies the state # of the pressure state if this block has one
-
-    block.Outlet.type = 'out';
     block.Outlet.IC = block.FlowIn.IC;
     block.Outlet.IC.T = T2a;
-
-    block.PowerTurb.type = 'out';
     [~,H1] = enthalpy(block.FlowIn.IC);
     [~,H2] = enthalpy(block.Outlet.IC);
     block.PowerTurb.IC = H1-H2;
-
-    block.TET.type = 'out';
     block.TET.IC = T2a;
 
     block.P_Difference = {'Pin','Pout'};
-    
-    for i = 1:1:length(block.PortNames)
-        if length(block.connections)<i || isempty(block.connections{i})
-            block.(block.PortNames{i}).connected={};
-        else
-            if ischar(block.connections{i})
-                block.(block.PortNames{i}).connected = block.connections(i);
-            else
-                block.(block.PortNames{i}).IC = block.connections{i};
-                block.(block.PortNames{i}).connected={};
-            end
-        end
-    end
 end
 if length(varargin)==2 %% Have inlets connected, re-initialize
     Inlet = varargin{2};

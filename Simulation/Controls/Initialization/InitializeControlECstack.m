@@ -30,25 +30,18 @@ if length(varargin)==1 %first initialization
     else
         block.HasFlow = false;
     end
-
-    block.PortNames = {'Hot','Cold','Voltage','PEN_Temp','OxidantTemp','OxidantFlow','SteamTemp','SteamFlow','Current'};
-    block.Hot.type = 'in';
+    
+    block.InletPorts = {'Hot','Cold','Voltage','PEN_Temp'};
     block.Hot.IC = block.Target(1)+.5*block.Target(2); 
-    block.Cold.type = 'in';
     block.Cold.IC = block.Target(1)-.5*block.Target(2);    
-    block.Voltage.type = 'in';
     block.Voltage.IC = 1.3; 
-    block.PEN_Temp.type = 'in';
     block.PEN_Temp.IC = block.Target(1);
-    block.OxidantTemp.type = 'out';
+    
+    block.OutletPorts = {'OxidantTemp','OxidantFlow','SteamTemp','SteamFlow','Current'};
     block.OxidantTemp.IC = block.Target(1);
-    block.OxidantFlow.type = 'out';
     block.OxidantFlow.IC = OxFlow; 
-    block.SteamTemp.type = 'out';
     block.SteamTemp.IC = block.SteamTemperature;
-    block.SteamFlow.type = 'out';
     block.SteamFlow.IC = SteamFlow;
-    block.Current.type = 'out';
     block.Current.IC = Current;
     
     block.P_Difference = {};
@@ -59,19 +52,6 @@ if length(varargin)==1 %first initialization
         block.Scale = [OxFlow;];
     else 
         block.Scale = [Current;];
-    end
-        
-    for i = 1:1:length(block.PortNames)
-        if length(block.connections)<i || isempty(block.connections{i})
-            block.(block.PortNames{i}).connected={};
-        else
-            if ischar(block.connections{i})
-                block.(block.PortNames{i}).connected = block.connections(i);
-            else
-                block.(block.PortNames{i}).IC = block.connections{i};
-                block.(block.PortNames{i}).connected={};
-            end
-        end
     end
 end
 

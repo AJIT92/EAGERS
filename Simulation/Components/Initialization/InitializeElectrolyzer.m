@@ -183,67 +183,29 @@ if length(varargin)==1 % first initialization
     [Flow1, Flow2,block,Inlet] = solveInitCond(Inlet,block,1);
     
     %% set up ports : Inlets need to either connected or have initial condition, outlets need an initial condition, and it doesn't matter if they have a connection 
-    block.PortNames = {'NetCurrent','Flow1','Flow2','Flow1Pout','Flow2Pout','Flow1Out','Flow2Out','Flow1Pin','Flow2Pin','MeasureVoltage','MeasurePower','MeasureTpen','MeasureTflow1','MeasureTflow2'};
-    block.NetCurrent.type = 'in';
+    block.InletPorts = {'NetCurrent','Flow1','Flow2','Flow1Pout','Flow2Pout'};
     block.NetCurrent.IC = sum(block.Current.H2 + block.Current.CO);
-    
-    block.Flow1.type = 'in';
     block.Flow1.IC = Inlet.Flow1;
-
-    block.Flow2.type = 'in';
     block.Flow2.IC =  Inlet.Flow2;
-
-    block.Flow1Pout.type = 'in';
     block.Flow1Pout.IC = block.Flow1_Pout;
     block.Flow1Pout.Pstate = []; %identifies the state # of the pressure state if this block has one
-    
-    block.Flow2Pout.type = 'in';
     block.Flow2Pout.IC = block.Flow2_Pout;
     block.Flow2Pout.Pstate = []; %identifies the state # of the pressure state if this block has one
     
-    block.Flow1Out.type = 'out';
+    block.OutletPorts = {'Flow1Out','Flow2Out','Flow1Pin','Flow2Pin','MeasureVoltage','MeasurePower','MeasureTpen','MeasureTflow1','MeasureTflow2'};
     block.Flow1Out.IC  = MergeLastColumn(Flow1.Outlet,block.Flow1Dir,block.Cells);
-
-    block.Flow2Out.type = 'out';
     block.Flow2Out.IC =  MergeLastColumn(Flow2.Outlet,block.Flow2Dir,block.Cells);
-
-    block.Flow1Pin.type = 'out';
     block.Flow1Pin.IC = block.Flow1_Pinit;
     block.Flow1Pin.Pstate = length(block.Scale)-1; %identifies the state # of the pressure state if this block has one
-
-    block.Flow2Pin.type = 'out';
     block.Flow2Pin.IC = block.Flow2_Pinit;
     block.Flow2Pin.Pstate = length(block.Scale); %identifies the state # of the pressure state if this block has one
-
-    block.MeasureVoltage.type = 'out';
     block.MeasureVoltage.IC = block.Voltage;
-
-    block.MeasurePower.type = 'out';
     block.MeasurePower.IC = sum(abs(block.Current.H2 + block.Current.CO)*block.Voltage*block.Cells)/1000;%power in kW
-
-    block.MeasureTpen.type = 'out';
     block.MeasureTpen.IC = block.T.Elec;
-
-    block.MeasureTflow1.type = 'out';
     block.MeasureTflow1.IC = block.T.Flow1(block.Flow1Dir(:,end));
-
-    block.MeasureTflow2.type = 'out';
     block.MeasureTflow2.IC = block.T.Flow2(block.Flow2Dir(:,end));
 
     block.P_Difference = {'Flow1Pin','Flow1Pout'; 'Flow2Pin', 'Flow2Pout';};
-    
-    for i = 1:1:length(block.PortNames)
-        if length(block.connections)<i || isempty(block.connections{i})
-            block.(block.PortNames{i}).connected={};
-        else
-            if ischar(block.connections{i})
-                block.(block.PortNames{i}).connected = block.connections(i);
-            else
-                block.(block.PortNames{i}).IC = block.connections{i};
-                block.(block.PortNames{i}).connected={};
-            end
-        end
-    end
 end
 if length(varargin)==2 %% Have inlets connected, re-initialize
     Inlet = varargin{2};
@@ -293,7 +255,7 @@ if length(varargin)==2 %% Have inlets connected, re-initialize
 end
 
 function [Flow1, Flow2,block,Inlet] = solveInitCond(Inlet,block,firstSolve)
-global Tags F
+global F
 %% loop to converge voltage 
 % SOEC & MCEC, adjust current and H2 flow to achieve power density and H2O utilization
 Tol = 1e-3;
@@ -324,46 +286,8 @@ while abs(error)>Tol %iterate to find the initial current (holding power or volt
     FuelCellNernst(Flow1,Flow2,block.Current,normTemp,block.Flow2_Pinit,block)
     
     %%Converge current distribution
-    OldVoltage = block.Voltage;
-    block.Voltage = sum(Tags.(block.name).nVoltage)/block.nodes;
-    block.Current.CO = Tags.(block.name).I_CO;
-    block.Current.H2 = Tags.(block.name).I_H2;
-    netCurrent = block.Current.H2+block.Current.CO;
-    TotCurrent = abs(sum(netCurrent));
-    localR = Tags.(block.name).LocalOhmic./abs(netCurrent);
-    
-    if strcmp(block.Specification,'power density')
-        error = (block.RatedStack_kW - Tags.(block.name).Power)/block.RatedStack_kW;
-        if count>1
-            if firstSolve==1 && error>1e-3
-                dP_di = max(.7*(Tags.(block.name).Power - OldCurrent*OldVoltage*block.Cells/1000)/(TotCurrent - OldCurrent),.7*Tags.(block.name).Power/(TotCurrent));%change in power with change in current
-            else
-                dP_di = max(1.15*((Tags.(block.name).Power - OldCurrent*OldVoltage*block.Cells/1000)/(TotCurrent - OldCurrent)),.7*Tags.(block.name).Power/(TotCurrent));
-            end
-            scale = 1+ error*block.RatedStack_kW/dP_di/TotCurrent;
-        else % first time through
-            scale = (block.RatedStack_kW*1000/block.Cells/block.Voltage)/TotCurrent; %total current it should have at this new voltage/ total current specified right now
-        end
-    elseif strcmp(block.Specification,'voltage')
-        Tol = 1e-3;
-        error = (block.SpecificationValue - block.Voltage)/block.Voltage;
-        if count>1
-            dV_di = -Tags.(block.name).ASR/block.A_Node/100^2;
-            scale = 1 + (block.Voltage - block.SpecificationValue)/dV_di/TotCurrent;
-        else % first time through
-            scale =1+sum((Tags.(block.name).nVoltage - block.SpecificationValue)./localR)/sum(block.Current);
-        end
-    elseif strcmp(block.Specification,'current density')
-        scale = abs(Inlet.NetCurrent)/TotCurrent;
-        error = (TotCurrent - abs(Inlet.NetCurrent))/TotCurrent;
-    end
-    
-    OldCurrent = TotCurrent;
-    ratio = block.Current.CO./netCurrent;
-    netCurrent = redistributeCurrent(netCurrent,scale,Tags.(block.name).nVoltage,localR,block.Voltage); %% start by maintaining same current in each row, then allow row voltages to balance (prevents fuel starvation in a row during initialization)
-    block.Current.CO = ratio.*netCurrent;
-    block.Current.H2 = (1-ratio).*netCurrent;
-    TotCurrent = abs(sum(netCurrent));
+    [block,error,scale] = redistributeCurrent(block,Inlet,count,firstSolve);
+    TotCurrent = abs(sum(block.Current.H2 + block.Current.CO));
     if firstSolve ==1
         if strcmp(block.Specification,'voltage') || strcmp(block.Specification,'current density')
             block.Cells = ceil((block.RatedStack_kW*1000/block.Voltage)/(sum(-block.Current))); %re-calculate the # of cells

@@ -1,6 +1,6 @@
-%% SOFC with external reformer
+%% SOFC system with internal or external reformer
 function Plant = SOFCsystem
-Reformer = 'internal';
+Reformer = 'external';
 % options are 'internal' for indirect internal reforming, 
 % 'direct' for  direct internal reforming, 
 % 'adiabatic' for external reforming using the heat from the anode (over-rides S2C ratio), 

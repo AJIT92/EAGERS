@@ -8,48 +8,18 @@ if length(varargin) ==1
     
     block.Efficiency = 0.90;%can be moved to model file
     
-    block.PortNames = {'Ivmax','VMax','Ivmin','VMin','ILoad','VLoad','Imin','Imax','VSource'};
-    
-    block.Ivmax.type = 'in';
+    block.InletPorts = {'Ivmax','VMax','Ivmin','VMin','ILoad','VLoad'};
     block.Ivmax.IC = -1;
-    
-    block.VMax.type = 'in';
     block.VMax.IC = 50;
-    
-    block.Ivmin.type = 'in';
     block.Ivmin.IC = 1;
-    
-    block.VMin.type = 'in';
     block.VMin.IC = 30;
-    
-    block.ILoad.type = 'in';
     block.ILoad.IC = 0;
-    
-    block.VLoad.type = 'in';
     block.VLoad.IC = 80;
     
-    block.Imin.type = 'out';
+    block.OutletPorts = {'Imin','Imax','VSource'};
     block.Imin.IC = -1;
-    
-    block.Imax.type = 'out';
     block.Imax.IC = 1;
-    
-    block.VSource.type = 'out';
     block.VSource.IC = 40;
-    
-    for i = 1:1:length(block.PortNames)
-        if length(block.connections)<i || isempty(block.connections{i})
-            block.(block.PortNames{i}).connected={};
-        else
-            if ischar(block.connections{i})
-                block.(block.PortNames{i}).connected = block.connections(i);
-            else
-                block.(block.PortNames{i}).IC = block.connections{i};
-                block.(block.PortNames{i}).connected={};
-            end
-        end
-    end
-    
 elseif length(varargin) ==2
     Ivmax = block.Effic*Inlet.Ivmax*Inlet.VMax/Inlet.VLoad;%DC bus current when v = vmax
     Ivmin = block.Effic*Inlet.Ivmin*Inlet.VMin/Inlet.VLoad;%DC bus current when v = vmin

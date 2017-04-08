@@ -21,30 +21,15 @@ if length(varargin)==1 %first initialization
     Out1.T = block.InitialFlowIn.T;
     Out2.T = block.InitialFlowIn.T;
     
-    block.PortNames = {'Inlet','ValvePos','Out1','Out2'};
-    block.Inlet.type = 'in';
+    block.InletPorts = {'Inlet','ValvePos'};
     block.Inlet.IC = FlowIn;
-    block.ValvePos.type = 'in';
     block.ValvePos.IC = block.PercOpen;
-    block.Out1.type = 'out';
+    
+    block.OutletPorts = {'Out1','Out2'};
     block.Out1.IC = Out1;
-    block.Out2.type = 'out';
     block.Out2.IC = Out2;  
     
     block.P_Difference = {};
-    
-    for i = 1:1:length(block.PortNames)
-        if length(block.connections)<i || isempty(block.connections{i})
-            block.(block.PortNames{i}).connected={};
-        else
-            if ischar(block.connections{i})
-                block.(block.PortNames{i}).connected = block.connections(i);
-            else
-                block.(block.PortNames{i}).IC = block.connections{i};
-                block.(block.PortNames{i}).connected={};
-            end
-        end
-    end
 end
 
 if length(varargin)==2 %% Have inlets connected, re-initialize

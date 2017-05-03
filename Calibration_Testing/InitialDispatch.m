@@ -38,7 +38,7 @@ for i=1:1:nG
         stor(i) = i;
     end
 end
-scaleCost = updateGeneratorCost(Time);
+scaleCost = updateGeneratorCost(Time/24 + DateSim);
 Data_t0 = GetCurrentData(DateSim);
 IC = StepByStepDispatch(Data_t0.Demand,scaleCost(1,:),Plant.optimoptions.Resolution, [],'',[]);
 IC(stor>0) = .5*UB(stor>0); % IC = halfway charged energy storage

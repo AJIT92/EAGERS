@@ -125,7 +125,7 @@ if K ==1
     end
     IC(Index) = str2double(inputdlg(list,'Specify Initial Condition (kW) or State of Charge (%)',1,sizes));
 else
-    scaleCost = updateGeneratorCost(0);%% All costs were assumed to be 1 when building matrices, update Generator costs for the given time
+    scaleCost = updateGeneratorCost(DateSim);%% All costs were assumed to be 1 when building matrices, update Generator costs for the given time
     IC = StepByStepDispatch(Data_t0.Demand,scaleCost,options.Resolution,[],'',[]);
     IC(stor>0) = .5*UB(stor>0); % IC = halfway charged energy storage
 end
@@ -270,15 +270,7 @@ else %run quickly with dispatch calculated then MPC loop called
         end
     end
 end
-Input = Dispatch.Dispatch.GeneratorInput;
-Outs = fieldnames(Last24hour);
-for i = 1:1:nG
-    if strcmp(Plant.Generator(i).Type,'Chiller') && ~ismember('E',Outs)%don't include cost if it shows up in generator demand
-        Input(:,i) = 0;
-    end
-end
-Time = (Dispatch.Dispatch.Timestamp(2:end)'-Dispatch.Dispatch.Timestamp(1));
-Dispatch.NetCost = NetCostCalc(Dispatch.Dispatch.GeneratorState,Time,Input);
+Dispatch.NetCost = NetCostCalc(Dispatch.Dispatch.GeneratorInput,Dispatch.Dispatch.Timestamp,'Input');
 
-Dispatch.Baseline = RunBaseline; %finish simulation by running baseline
+% Dispatch.Baseline = RunBaseline; %finish simulation by running baseline
 Plant.Dispatch = Dispatch;

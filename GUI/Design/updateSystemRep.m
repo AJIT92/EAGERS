@@ -19,6 +19,7 @@ set(handles.textWaterHeater_H2,'Visible','off')
 set(handles.pushbuttonTES2,'Visible','off')
 set(handles.textTES2_H2,'Visible','off')
 set(handles.pushbuttonFuelCell,'Visible','off')
+set(handles.textFuelCell_E,'Visible','off')
 set(handles.textFuelCell_H1,'Visible','off')
 set(handles.textFuelCell_H2,'Visible','off')
 set(handles.pushbuttonHotWaterDemands,'Visible','off')
@@ -71,6 +72,7 @@ for i = 1:1:nG
     elseif strcmp(sys.Type,'CHP Generator')
         if sys.VariableStruct.isFuelCell
             set(handles.pushbuttonFuelCell,'Visible','on')
+            set(handles.textFuelCell_E,'Visible','on')
             set(handles.textFuelCell_H1,'Visible','on')
             set(handles.textFuelCell_H2,'Visible','on')
         else
@@ -85,7 +87,7 @@ for i = 1:1:nG
         set(handles.pushbuttonWaterHeaterInSys,'Visible','on')
         set(handles.textWaterHeater_H2,'Visible','on')
     elseif strcmp(sys.Type,'Chiller')
-        set(handles.pushbuttonChiller,'Visible','on')
+        set(handles.pushbuttonChillerInSys,'Visible','on')
         set(handles.textChill_E,'Visible','on')
         set(handles.textChill_C1,'Visible','on')
         set(handles.textChill_C2,'Visible','on')
@@ -100,12 +102,21 @@ for i = 1:1:nG
 end
 
 % Check whether hot/cold demands should be shown
-if strcmp(get(handles.textICE_mGT_H2,'Visible'),'on') || strcmp(get(handles.textSolarThermal_H2,'Visible'),'on') || strcmp(get(handles.textWaterHeater_H2,'Visible'),'on') || strcmp(get(handles.textTES2_H2,'Visible'),'on') || strcmp(get(handles.textFuelCell_H2.Visible,'Visible'),'on')
+if strcmp(get(handles.textICE_mGT_H2,'Visible'),'on') || ...
+        strcmp(get(handles.textSolarThermal_H2,'Visible'),'on') || ...
+        strcmp(get(handles.textWaterHeater_H2,'Visible'),'on') || ...
+        strcmp(get(handles.textTES2_H2,'Visible'),'on') || ...
+        strcmp(get(handles.textFuelCell_H2,'Visible'),'on')
     set(handles.pushbuttonHotWaterDemands,'Visible','on')
 end
-if strcmp(get(handles.textAirHeater_H1,'Visible'),'on') || strcmp(get(handles.textTES1_H1,'Visible'),'on') || strcmp(get(handles.textFuelCell_H1,'Visible'),'on')
+if strcmp(get(handles.textAirHeater_H1,'Visible'),'on') || ...
+        strcmp(get(handles.textTES1_H1,'Visible'),'on') || ...
+        strcmp(get(handles.textFuelCell_H1,'Visible'),'on')
     set(handles.pushbuttonHeatingDemands,'Visible','on')
 end
-if strcmp(get(handles.textAbChill_C1,'Visible'),'on') || strcmp(get(handles.textChill_C1,'Visible'),'on') || strcmp(get(handles.textTES3_C1,'Visible'),'on') || strcmp(get(handles.textTES2_H2,'Visible'),'on')
+if strcmp(get(handles.textAbChill_C1,'Visible'),'on') || ...
+        strcmp(get(handles.textChill_C1,'Visible'),'on') || ...
+        strcmp(get(handles.textTES3_C1,'Visible'),'on') || ...
+        strcmp(get(handles.textTES2_H2,'Visible'),'on')
     set(handles.pushbuttonCoolingDemands,'Visible','on')
 end

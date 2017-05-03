@@ -1,5 +1,5 @@
 %storage needs to be loaded last so that the buffers can be calculated
-global Plant UB 
+global Plant
 nG = length(Plant.Generator);
 BuffPerc = Plant.optimoptions.Buffer; % percentage for buffer on storage
 for j = 1:1:nG
@@ -25,14 +25,14 @@ for j = 1:1:nG
             for i = 1:1:nG
                 if ismember(Plant.Generator(i).Type,include1)
                     chargeCapacity = chargeCapacity+Plant.Generator(i).Size;
-                elseif ismember(Plant.Generator(i).Type,include2)
+                elseif ismember(Plant.Generator(i).Type,include2) && isfield(Plant.Generator(i).OpMatA.output, 'H') %generator may be included, but may not be connected for CHP
                     chargeCapacity = chargeCapacity+Plant.Generator(i).Size.*Plant.Generator(i).OpMatA.output.H;%OpMatA.output.H is the heat ratio
                 end
             end
         end
-        Buffer = min((BuffPerc/100)*UB(j), (chargeCapacity))*Plant.Generator(j).OpMatA.Stor.DischEff;
+        Buffer = min((BuffPerc/100)*Plant.Generator(j).OpMatA.Stor.UsableSize,chargeCapacity);
         Plant.Generator(j).OpMatA.link.bineq(end-1) = -Buffer; %lower buffer ineq :  -SOC - W <= -Buffer becomes W>= buffer -SOC
-        Plant.Generator(j).OpMatA.link.bineq(end) = UB(j)*Plant.Generator(j).OpMatA.Stor.DischEff-Buffer; %upper buffer ineq :  SOC - Z <= (UB-Buffer)
+        Plant.Generator(j).OpMatA.link.bineq(end) = Plant.Generator(j).OpMatA.Stor.UsableSize-Buffer; %upper buffer ineq :  SOC - Z <= (UB-Buffer)
         Plant.Generator(j).OpMatA.Z.ub = Buffer;
         Plant.Generator(j).OpMatA.W.ub = Buffer;
         Plant.Generator(j).OpMatB = Plant.Generator(j).OpMatA;

@@ -19,7 +19,7 @@ if Date ~=inf && Date>(RealTimeData.Timestamp(end-1))% End Operation or Simulati
     RealData = [];
 else 
     %% need better indexing system to call current data
-    x1 = max(1,nnz(RealTimeData.Timestamp<=Date));
+    x1 = max(1,nnz(RealTimeData.Timestamp<=(Date+1e-8))); %need 1e-8 to avoid rounding errors
     S = fieldnames(RealTimeData.Demand);
     RealData.Timestamp = RealTimeData.Timestamp(x1);
     RealData.Temperature = RealTimeData.Temperature(x1);

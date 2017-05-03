@@ -1,7 +1,6 @@
-function scaleCost = updateGeneratorCost(Time)
-global Plant DateSim %DateSim: Current time in the simulation.
-nS = length(Time);
-Timestamp = Time/24 + DateSim;
+function scaleCost = updateGeneratorCost(Timestamp)
+global Plant
+nS = length(Timestamp);
 Source = {zeros(length(Plant.Generator),1)};
 for i = 1:1:length(Plant.Generator)
     if strcmp(Plant.Generator(i).Type,'Utility')
@@ -32,7 +31,7 @@ for i = 1:1:length(Plant.Generator)
             date1 = datevec(utility.Timestamp(1));
             year1 = date1(1);
             datenow = datevec(Timestamp);
-            interpDate = datenum([year1*ones(length(Time),1), datenow(:,2:end)]);
+            interpDate = datenum([year1*ones(length(Timestamp),1), datenow(:,2:end)]);
             Utility(i).Rate = interp1(utility.Timestamp,utility.Rate,interpDate)/293.1; %interpolate & convert gas rate from $/MMBTU to $/kWh;
         else
             %% need to add something for district heating/cooling

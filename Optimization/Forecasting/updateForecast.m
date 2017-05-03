@@ -1,7 +1,8 @@
-function [Forecast, Renewable] = updateForecast(Date,Time)
+function [Forecast, Renewable] = updateForecast(Date,RealData)
 %Date is the date number, Time is a vector of times (in hours)
 global Plant
-Forecast =  CreateForecast(Date,Time);
+Time = buildTimeVector(Plant.optimoptions);%% set up dt vector of time interval length
+Forecast =  CreateForecast(Date,Time,RealData);
 nS = length(Time);
 nG = length(Plant.Generator);
 Renewable = zeros(nS,nG);

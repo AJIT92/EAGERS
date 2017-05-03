@@ -1,7 +1,6 @@
 function marginal = updateMarginalCost(Dispatch,scaleCost,Time)
-global Plant UB
-% Time = buildTimeVector(Plant.optimoptions);
-dt = Time-[0,Time(1:end-1)];
+global Plant
+dt = Time-[0;Time(1:end-1)];
 Outs = Plant.optimoptions.Outputs;
 for i = 1:1:length(Outs)
     Out.(Outs{i}) = [];
@@ -9,36 +8,47 @@ for i = 1:1:length(Outs)
 end
 marginal =[];
 nG = length(Plant.Generator);
+UB = zeros(nG,1);
+for i = 1:1:nG
+    states = Plant.Generator(i).OpMatB.states;
+    for j = 1:1:length(states);
+        UB(i) = UB(i) + Plant.Generator(i).OpMatB.(states{j}).ub;
+    end
+end
 marginCost = zeros(4,nG);
 stor = [];
 Out.CHP = [];
 I = zeros(1,nG);
 for i = 1:1:nG
-    s = Plant.Generator(i).OpMatB.states;
-    if length(s)>1 && isfield(Plant.Generator(i).OpMatB, 'constCost') %all of these cost terms need to be scaled later on
-        I(i) = Plant.Generator(i).OpMatB.(s{1}).ub;
-        marginCost(1,i) = Plant.Generator(i).OpMatB.(s{1}).f;
-        marginCost(2,i) = Plant.Generator(i).OpMatB.(s{2}).f;
-        marginCost(3,i) = Plant.Generator(i).OpMatB.(s{2}).H;
-        marginCost(4,i) = Plant.Generator(i).OpMatB.constCost/Plant.Generator(i).Size;%constant cost/upperbound
-    elseif isfield(Plant.Generator(i).OpMatA,'Stor')
-        stor(end+1) = i;
-        S = fieldnames(Plant.Generator(i).OpMatA.output);
-        storType.(S{1})(end+1) = i;
-    elseif~isempty(s) %utilities and single state generators (linear cost term)
-        I(i) = UB(i);
-        marginCost(1,i) = Plant.Generator(i).OpMatB.(s{1}).f;
-        if isfield(Plant.Generator(i).OpMatB, 'constCost')
+    if Plant.Generator(i).Enabled
+        s = Plant.Generator(i).OpMatB.states;
+        if length(s)>1 && isfield(Plant.Generator(i).OpMatB, 'constCost') %all of these cost terms need to be scaled later on
+            I(i) = Plant.Generator(i).OpMatB.(s{1}).ub;
+            marginCost(1,i) = Plant.Generator(i).OpMatB.(s{1}).f;
+            marginCost(2,i) = Plant.Generator(i).OpMatB.(s{2}).f;
+            marginCost(3,i) = Plant.Generator(i).OpMatB.(s{2}).H;
             marginCost(4,i) = Plant.Generator(i).OpMatB.constCost/Plant.Generator(i).Size;%constant cost/upperbound
+        elseif isfield(Plant.Generator(i).OpMatA,'Stor')
+            stor(end+1) = i;
+            S = fieldnames(Plant.Generator(i).OpMatA.output);
+            if isfield(Out,(S{1}))
+                storType.(S{1})(end+1) = i;
+            end
+        elseif~isempty(s) %utilities and single state generators (linear cost term)
+            I(i) = UB(i);
+            marginCost(1,i) = Plant.Generator(i).OpMatB.(s{1}).f;
+            if isfield(Plant.Generator(i).OpMatB, 'constCost')
+                marginCost(4,i) = Plant.Generator(i).OpMatB.constCost/Plant.Generator(i).Size;%constant cost/upperbound
+            end
         end
-    end
-    if I(i)>0
-        S = fieldnames(Plant.Generator(i).OpMatA.output);
-        if length(S)==2 && ismember('H',S) && ismember('E',S)
-            Out.E(end+1) = i;
-            Out.CHP(end+1) = i;
-        else
-            Out.(S{1})(end+1) = i;
+        if I(i)>0
+            S = fieldnames(Plant.Generator(i).OpMatA.output);
+            if length(S)==2 && ismember('H',S) && ismember('E',S)
+                Out.E(end+1) = i;
+                Out.CHP(end+1) = i;
+            elseif isfield(Out, (S{1}))
+                Out.(S{1})(end+1) = i;
+            end
         end
     end
 end
@@ -111,6 +121,6 @@ for i = 1:1:length(Type)
     timedivideMax = sum(dt(maxOn_t>0));
     minOn_t(isnan(minOn_t))=0;
     maxOn_t(isnan(maxOn_t))=0;
-    marginal.(Type{i}).Min = sum(minOn_t(minOn_t~=0).*dt(minOn_t~=0)')/timedivideMin;%make the cost proportional to amount of time at that cost
-    marginal.(Type{i}).Max = sum(maxOn_t(maxOn_t>0).*dt(maxOn_t>0)')/timedivideMax;
+    marginal.(Type{i}).Min = sum(minOn_t(minOn_t~=0).*dt(minOn_t~=0))/timedivideMin;%make the cost proportional to amount of time at that cost
+    marginal.(Type{i}).Max = sum(maxOn_t(maxOn_t>0).*dt(maxOn_t>0))/timedivideMax;
 end

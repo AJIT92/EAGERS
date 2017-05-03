@@ -20,14 +20,16 @@ if Dt~=1 %convert to 1 second sampling time
     end
 else SS_1 = SS;
 end
+[z,z2] = size(SS.C);
 x0 = LB;
 if ~isempty(Hratio)
     x0(2) = LB*Hratio; %CHP heat produed per unit electricity
+elseif z>1 %if there is no heat ratio, but there is multiple state outputs, then it is capable of CHP, but is not connected for CHP
+    x0(2) = 0;
 end
 nS = round(4*3600/Dt)+1; % assume ramping is less than 4 hours (i forget why I made this limit)
 t = linspace(0, Dt*(nS-1),nS);
 u = UB*linspace(1,1,nS)';
-[z,z2] = size(SS.C);
 X0 = zeros(z2,1);
 for k = 1:1:z
     X0(find(SS.C(k,:),1,'first'))=x0(k);%finds the first non-zero element in SS.C and makes X0 at that index = x0

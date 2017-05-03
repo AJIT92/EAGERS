@@ -26,6 +26,7 @@ if isempty(strfind(p,dir1))% && isempty(strfind(p,'Plant'))
                     fullfile(Model_dir,'Optimization','BasicFunctions');
                     fullfile(Model_dir,'Optimization','Communication');
                     fullfile(Model_dir,'Optimization','Forecasting');
+                    fullfile(Model_dir,'Optimization','NetworkQP');
                     fullfile(Model_dir,'Optimization','Threshold');
                     fullfile(Model_dir,'results');
                     fullfile(Model_dir,'results','LoggedData');
@@ -44,15 +45,16 @@ if isempty(strfind(p,dir1))% && isempty(strfind(p,'Plant'))
                     fullfile(Model_dir,'System Library');
                     fullfile(Model_dir,'System Library','AbChiller');
                     fullfile(Model_dir,'System Library','AirHeater');
+                    fullfile(Model_dir,'System Library','Battery');
                     fullfile(Model_dir,'System Library','Buildings');
                     fullfile(Model_dir,'System Library','Buildings','RealBuildingData');
                     fullfile(Model_dir,'System Library','Chiller');
                     fullfile(Model_dir,'System Library','ColdStor');
                     fullfile(Model_dir,'System Library','Control');
                     fullfile(Model_dir,'System Library','Economic');
-                    fullfile(Model_dir,'System Library','ElecStor');
                     fullfile(Model_dir,'System Library','Grid');
                     fullfile(Model_dir,'System Library','HighTempStor');
+                    fullfile(Model_dir,'System Library','HotStor');
                     fullfile(Model_dir,'System Library','HVAC');
                     fullfile(Model_dir,'System Library','ICE');
                     fullfile(Model_dir,'System Library','MCFC');

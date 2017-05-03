@@ -27,7 +27,7 @@ if ~isempty(dischEff) %must be a storage system
     IC(stor)=max(IC(stor).*(1-(1-dischEff(stor))*dt(1)),LB(stor));%scale storage value by discharge efficiency (this scaling is used in optimizations)
 end
 IC = min(UB,IC);
-scaleCost = updateGeneratorCost(Time); %% All feedstock costs were assumed to be 1 when building matrices 
+scaleCost = updateGeneratorCost(Time/24+DateSim); %% All feedstock costs were assumed to be 1 when building matrices 
 if Si<=1
     PredictDispatch = ones(length(Time)+1,1)*IC;
 else PredictDispatch = [IC;Dispatch.Predicted(Si).GenDisp(3:end,:);Dispatch.Predicted(Si).GenDisp(end,:)];
@@ -101,7 +101,7 @@ LimitUBforShutOff(GenDisp,dX);%Limit UB if generator needs to shut off soon!!!
 EC = GenDisp(2,:); %forecasted end condition
 targetCharge = max(0,(EC(stor)-IC(stor))/dt(1));
 targetDischarge = max(0,(IC(stor)-EC(stor))/dt(1));
-plotDispatch2(GenDisp,Time)
+plotDispatch(GenDisp,Time)
 
 %% Step 5 identify On/Off threshold for use on-line
 ThresholdSet(GenDisp,dt(1));

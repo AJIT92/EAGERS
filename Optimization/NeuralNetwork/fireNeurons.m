@@ -60,7 +60,7 @@ if training %train the first time through
             IC(stor)=max(IC(stor).*(1-(1-dischEff(stor))*dt(1)),LB(stor));%scale storage value by discharge efficiency (this scaling is used in optimizations)
         end
         IC = min(UB,IC);
-        scaleCost = updateGeneratorCost(Time); %% All feedstock costs were assumed to be 1 when building matrices 
+        scaleCost = updateGeneratorCost(Time/24+DateSim); %% All feedstock costs were assumed to be 1 when building matrices 
         if day<1
             PredictDispatch = ones(length(Time)+1,1)*IC;
         else PredictDispatch = [IC;predictDisp(2:end,:)];

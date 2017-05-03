@@ -137,13 +137,13 @@ DISPATCH
 % --- Executes on button press in NewProject.
 function NewProject_Callback(hObject, eventdata, handles)
 global Plant
-Name = char(inputdlg('Specify the project name','Project Name', 1,{'MicroGrid_01'}));
-hCreate = dialog('Visible','off');
-Plant = plant(Name);
+Plant = [];
+Plant.Name = char(inputdlg('Specify the project name','Project Name', 1,{'MicroGrid_01'}));
+% hCreate = dialog('Visible','off');
+% CreateNewProject(Plant.Name,hCreate)
+% waitfor(hCreate)
 close
 MainScreen1
-% CreateNewProject(Name,hCreate)
-% waitfor(hCreate)
 
 
 % --- Executes on selection change in popupmenuProject.

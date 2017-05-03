@@ -53,5 +53,5 @@ SS.B = B;
 SS.C = C;
 SS.D = zeros(length(C(:,1)),length(B(1,:)));
 SS.Dt = 1; %sampling time
-SSmpc = changeTimestep(SS,Plant.optimoptions.Tmpc,1);
-GendX = zeros(1,nG);
+% SSmpc = changeTimestep(SS,Plant.optimoptions.Tmpc,1);
+% GendX = zeros(1,nG);

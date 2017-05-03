@@ -1,39 +1,45 @@
 function marginal = instantMarginalCost(Dispatch,scaleCost)
-global Plant UB
+global Plant
 Outs = Plant.optimoptions.Outputs;
 for i = 1:1:length(Outs)
     Out.(Outs{i}) = [];
     storType.(Outs{i}) = [];
 end
-nG = length(Plant.Generator);
+nG = length(Plant.Generator);  
 marginCost = zeros(1,nG);
 stor = [];
 Out.CHP = [];
 I = zeros(1,nG);
 for i = 1:1:nG
-    s = Plant.Generator(i).OpMatB.states;
-    if isfield(Plant.Generator(i).OpMatB,'constCost') %all of these cost terms need to be scaled later on       
-        I(i) = Plant.Generator(i).OpMatB.(s{1}).ub;
-        if isempty(Dispatch) || Dispatch(i)<=I(i)
+    if Plant.Generator(i).Enabled %only use enabled gens
+        s = Plant.Generator(i).OpMatB.states;
+        if isfield(Plant.Generator(i).OpMatB,'constCost') %all of these cost terms need to be scaled later on       
+            I(i) = Plant.Generator(i).OpMatB.(s{1}).ub;
+            if isempty(Dispatch) || Dispatch(i)<=I(i)
+                marginCost(i) = Plant.Generator(i).OpMatB.(s{1}).f;
+            elseif Dispatch(i)>I(i)
+                marginCost(i) = Plant.Generator(i).OpMatB.(s{2}).f + (Dispatch(i)-I(i))*Plant.Generator(i).OpMatB.(s{2}).H;
+            end
+        elseif isfield(Plant.Generator(i).OpMatB,'Stor')
+            stor(end+1) = i;
+            S = fieldnames(Plant.Generator(i).OpMatA.output);
+            if isfield(Out,(S))
+                storType.(S{1})(end+1) = i;
+            end
+        elseif~isempty(s) %utilities and single state generators (linear cost term)
             marginCost(i) = Plant.Generator(i).OpMatB.(s{1}).f;
-        elseif Dispatch(i)>I(i)
-            marginCost(i) = Plant.Generator(i).OpMatB.(s{2}).f + (Dispatch(i)-I(i))*Plant.Generator(i).OpMatB.(s{2}).H;
+            for j = 1:1:length(s);
+                I(i) = I(i) + Plant.Generator(i).OpMatB.(s{j}).ub;
+            end
         end
-    elseif isfield(Plant.Generator(i).OpMatB,'Stor')
-        stor(end+1) = i;
-        S = fieldnames(Plant.Generator(i).OpMatA.output);
-        storType.(S{1})(end+1) = i;
-    elseif~isempty(s) %utilities and single state generators (linear cost term)
-        marginCost(i) = Plant.Generator(i).OpMatB.(s{1}).f;
-        I(i) = UB(i);
-    end
-    if I(i)>0
-        S = fieldnames(Plant.Generator(i).OpMatB.output);
-        if length(S)==2 && ismember('H',S) && ismember('E',S)
-            Out.E(end+1) = i;
-            Out.CHP(end+1) = i;
-        else
-            Out.(S{1})(end+1) = i;
+        if I(i)>0
+            S = fieldnames(Plant.Generator(i).OpMatB.output);
+            if length(S)==2 && ismember('H',S) && ismember('E',S)
+                Out.E(end+1) = i;
+                Out.CHP(end+1) = i;
+            elseif isfield(Out,(S{1}))
+                Out.(S{1})(end+1) = i;
+            end
         end
     end
 end

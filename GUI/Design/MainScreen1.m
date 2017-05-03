@@ -22,7 +22,7 @@ function varargout = MainScreen1(varargin)
 
 % Edit the above text to modify the response to help MainScreen1
 
-% Last Modified by GUIDE v2.5 03-Apr-2017 11:10:48
+% Last Modified by GUIDE v2.5 12-Apr-2017 16:51:46
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -61,7 +61,7 @@ guidata(hObject, handles);
 % UIWAIT makes MainScreen1 wait for user response (see UIRESUME)
 % uiwait(handles.figure1);
 global Plant testSystems selectedSystem Model_dir SYSINDEX
-Plant.optimptions.method = 'Planning';
+Plant.optimoptions.method = 'Planning';
 if isfield(Plant.Generator,'OpMatA')
     Plant.Generator = rmfield(Plant.Generator,'OpMatA');
 end
@@ -602,43 +602,43 @@ if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgr
     set(hObject,'BackgroundColor','white');
 end
 
-function MaxEff_Callback(hObject, eventdata, handles)
+function compText4_Callback(hObject, eventdata, handles)
 global Plant
 plantindex = get(handles.CompName,'Userdata');
 Plant.Generator(plantindex).VariableStruct.eff = str2double(get(hObject,'String'));
 
-function MaxEff_CreateFcn(hObject, eventdata, handles)
+function compText4_CreateFcn(hObject, eventdata, handles)
 if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
     set(hObject,'BackgroundColor','white');
 end
 
-function RampRate_Callback(hObject, eventdata, handles)
+function compText3_Callback(hObject, eventdata, handles)
 global Plant
 plantindex = get(handles.CompName,'Userdata');
 Plant.Generator(plantindex).VariableStruct.Ramp = str2double(get(hObject,'String'));
 
-function RampRate_CreateFcn(hObject, eventdata, handles)
+function compText3_CreateFcn(hObject, eventdata, handles)
 if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
     set(hObject,'BackgroundColor','white');
 end
 
-function MinOutput_Callback(hObject, eventdata, handles)
+function compText2_Callback(hObject, eventdata, handles)
 global Plant
 plantindex = get(handles.CompName,'Userdata');
 Plant.Generator(plantindex).VariableStruct.LB = str2double(get(hObject,'String'));
 
-function MinOutput_CreateFcn(hObject, eventdata, handles)
+function compText2_CreateFcn(hObject, eventdata, handles)
 if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
     set(hObject,'BackgroundColor','white');
 end
 
-function MaxOutput_Callback(hObject, eventdata, handles)
+function compText1_Callback(hObject, eventdata, handles)
 global Plant
 plantindex = get(handles.CompName,'Userdata');
 Plant.Generator(plantindex).Size = str2double(get(hObject,'String'));
 Plant.Generator(plantindex).VariableStruct.UB = str2double(get(hObject,'String'));
 
-function MaxOutput_CreateFcn(hObject, eventdata, handles)
+function compText1_CreateFcn(hObject, eventdata, handles)
 if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
     set(hObject,'BackgroundColor','white');
 end
@@ -720,37 +720,32 @@ AddSystem(hObject,handles)
 function HotStor_Callback(hObject, eventdata, handles)
 AddSystem(hObject,handles)
 
-function ElecStor_Callback(hObject, eventdata, handles)
+function Battery_Callback(hObject, eventdata, handles)
 AddSystem(hObject,handles)
 
 % --- Executes on button press in pushbuttonRemove.
 function pushbuttonRemove_Callback(hObject, eventdata, handles)
 global Plant SYSINDEX
-nG = length(Plant.Generator);
-str = strcat(Plant.Generator(SYSINDEX).Type,'.',Plant.Generator(SYSINDEX).Name);
-for n = 1:1:length(Plant.Network)
-    Plant.Network(n).Equipment = Plant.Network(n).Equipment(~strcmp(str,Plant.Network(n).Equipment));
+if SYSINDEX ~= 0
+    str = strcat(Plant.Generator(SYSINDEX).Type,'.',Plant.Generator(SYSINDEX).Name);
+    for n = 1:1:length(Plant.Network)
+        Plant.Network(n).Equipment = Plant.Network(n).Equipment(~strcmp(str,Plant.Network(n).Equipment));
+    end
+    Plant.Generator(SYSINDEX) = [];
+    SYSINDEX = ~isempty(Plant.Generator) * 1;
+    updateSystemRep(hObject, eventdata, handles)
+    EditSystem(handles)
 end
-if SYSINDEX ==1
-    Plant.Generator = Plant.Generator(2:end);
-elseif SYSINDEX == nG
-    Plant.Generator = Plant.Generator(1:end-1);
-else
-    Plant.Generator = [Plant.Generator(1:SYSINDEX-1),Plant.Generator(SYSINDEX+1:end)];
-end
-SYSINDEX = 1;
-updateSystemRep(hObject, eventdata, handles)
-EditSystem(handles)
 
-% --- Executes on selection change in Compfuel.
-function Compfuel_Callback(hObject, eventdata, handles)
+% --- Executes on selection change in CompFuel.
+function CompFuel_Callback(hObject, eventdata, handles)
 global Plant
 plantindex = get(handles.CompName,'Userdata');
 fuels = get(hObject,'String');
 Plant.Generator(plantindex).Source = fuels{get(hObject,'Value')};
 
 % --- Executes during object creation, after setting all properties.
-function Compfuel_CreateFcn(hObject, eventdata, handles)
+function CompFuel_CreateFcn(hObject, eventdata, handles)
 if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
     set(hObject,'BackgroundColor','white');
 end

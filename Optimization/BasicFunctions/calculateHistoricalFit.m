@@ -4,29 +4,23 @@ h=waitbar(0,'Recalculating surface fit');
 Steps = round(1/(Plant.Data.Timestamp(2)-Plant.Data.Timestamp(1)));%points in 1 day of data
 Resolution =24/Steps;
 [~,m,~,hour,minutes] = datevec(Plant.Data.Timestamp(2:end-1));%avoid checking month 1st and last point if starting or ending at 00
-m = [m(1) m m(end)];%make m the same length as data
-hour = [max(0,floor(hour(1)-Resolution)) hour min(24,hour(end)+floor((minutes(end)+60*Resolution)/60))]';%make hour the same lenght as data
-minutes = [max(0,minutes(1)-60*Resolution) minutes mod(minutes(end)+60*Resolution,60)]';%make hour the same lenght as data
-months = unique(m);
-Xs = 1+round(Steps*(ceil(Plant.Data.Timestamp(1))-Plant.Data.Timestamp(1)));
+m = [m(1); m; m(end)];%make m the same length as data
+hour = [max(0,floor(hour(1)-Resolution)); hour; min(24,hour(end)+floor((minutes(end)+60*Resolution)/60))];%make hour the same lenght as data
+minutes = [max(0,minutes(1)-60*Resolution); minutes; mod(minutes(end)+60*Resolution,60)];%make hour the same lenght as data
+months = sort(unique(m));
 
 %% fit temperature data
 Z = ones(12,24);
 for i = 1:1:length(months)
     waitbar(i/length(months),h,'Calculating Temperature fit');
-    D = datevec(Plant.Data.Timestamp(Xs));
-    days = floor(nnz(m==D(2))/Steps); %data points in month/points per day
     Total = zeros(24,1);
     points = zeros(24,1);
-    for d = 1:1:days
-        for j = 1:1:24
-            XFs = Xs+round(Steps/24)-1;
-            Total(j) = Total(j)+sum(Plant.Data.Temperature(Xs:XFs));
-            points(j) = points(j) +(XFs-Xs+1);
-            Xs = XFs+1;
-        end
+    for j = 1:1:24
+        X = (m==i) & (hour == j-1);
+        Total(j) = sum(Plant.Data.Temperature(X));
+        points(j) = nnz(Plant.Data.Temperature(X));
     end
-    Z(D(2),:) = (Total./points)';
+    Z(months(i),:) = (Total./points)';
 end
 if length(months)<12
     if nnz(months==1)==1 && nnz(months==12)==1

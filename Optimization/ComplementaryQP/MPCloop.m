@@ -44,7 +44,7 @@ global UBmpc LBmpc setGen ShutdownRamp MinThresh Threshold %determined by dispat
 %ShutdownRamp: if a generator has just been shut down (with OnOff not actualOnOff) this describes the residual power that will be produced during shutdown so that it can be subtracted from the optimization of the remaining generators
 %MinThresh: The minimum threshold of power purchased from the grid.
 GetCurrentTime
-RealData = GetCurrentData(DateSim);
+RealData = GetCurrentData1(DateSim);
 Tmpc = Plant.optimoptions.Tmpc;
 if isempty(spGEN)
     spGEN = setGen;%used the first time MPCloop runs

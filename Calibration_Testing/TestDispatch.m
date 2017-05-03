@@ -190,7 +190,7 @@ if E == 3%% Start iteration, solving quadratic problem at loads in the range min
         Demand.C = linspace(CminSize,Csize,m);
     end
     tic
-    scaleCost = updateGeneratorCost(0);
+    scaleCost = updateGeneratorCost(DateSim);
     marginCost = updateMarginalCost(ones(nS+1,1)*UB,scaleCost,Time);%assume everything on to find a marginal cost.
     MapWaitbarHandle=waitbar(0,'Building Optimal Dispatch Map');
     [costMin, OptimalOutput] = StepByStepDispatch(Demand,scaleCost,ones(m,1)*Resolution,[],[],marginCost,[]);%an empty limit denotes unconstrained
@@ -335,33 +335,7 @@ if E == 4% Test Dynamic Dispatch
     [GenDisp, dX] = FilterGenerators(QPall,Organize,IC,Demand,FirstDisp,OptimalState,scaleCost,Locked);
     disp(['time to load, update matrices and run step 3 is ' num2str(toc)])
     
-    %% record input to asses cost of dispatch then plot
-    Input = 0*GenDisp;
-    chillers = zeros(1, length(nG));
-    for i = 1:1:nG
-        if ~isempty(Plant.Generator(i).Output)
-            cap = Plant.Generator(i).Output.Capacity*UB(i);
-        end
-        eff = [];
-        if strcmp(Plant.Generator(i).Type,'Electric Generator') || strcmp(Plant.Generator(i).Type,'CHP Generator')
-            eff = Plant.Generator(i).Output.Electricity;
-        elseif strcmp(Plant.Generator(i).Type,'Chiller') &&  ~ismember('E',Outs)%don't include cost if it shows up in generator demand
-            eff = Plant.Generator(i).Output.Cooling;
-            chillers(i) = i;
-        elseif strcmp(Plant.Generator(i).Type,'Heater')
-            eff = Plant.Generator(i).Output.Heat;    
-        end
-        if ~isempty(eff)
-            Input(:,i) = GenDisp(:,i)./interp1(cap,eff,GenDisp(:,i));
-        elseif strcmp(Plant.Generator(i).Type,'Utility')
-            Input(:,i) = GenDisp(:,i);
-        end
-    end
-    Input(isnan(Input))=0;
-    if ~Plant.optimoptions.sequential% if you are running chiller and generator at the same time, then the chiller electric use is added to demand, so don't count chiller use twice
-        Input(:,chillers>0) = 0;
-    end
-    Cost = sum(NetCostCalc(GenDisp,Time,Input));
+    Cost = NetCostCalc(GenDisp,Time,'Dispatch');
     disp(['Optimal dispatch cost is : ', num2str(Cost)])
     plotDispatch2(GenDisp,Demand,Time,1)
     coststr = {['Cost: $' num2str(round(Cost,2))]};
@@ -389,27 +363,7 @@ if E == 4% Test Dynamic Dispatch
     MapWaitbarHandle =[];
     %% asses costs and plot baseline
     if Feasible==1
-        Input = 0*Baseline.GeneratorState;
-        for i = 1:1:nG
-            if ~isempty(Plant.Generator(i).Output)
-                cap = Plant.Generator(i).Output.Capacity*UB(i);
-            end
-            eff = [];
-            if strcmp(Plant.Generator(i).Type,'Electric Generator') || strcmp(Plant.Generator(i).Type,'CHP Generator')
-                eff = Plant.Generator(i).Output.Electricity;
-            elseif strcmp(Plant.Generator(i).Type,'Chiller') && ~ismember('E',Outs)%don't include cost if it shows up in generator demand
-                eff = Plant.Generator(i).Output.Cooling;
-            elseif strcmp(Plant.Generator(i).Type,'Heater')
-                eff = Plant.Generator(i).Output.Heat;    
-            end
-            if ~isempty(eff)
-                Input(:,i) = Baseline.GeneratorState(:,i)./interp1(cap,eff,Baseline.GeneratorState(:,i));
-            elseif strcmp(Plant.Generator(i).Type,'Utility')
-                Input(:,i) = GenDisp(:,i);
-            end
-        end
-        Input(isnan(Input))=0;
-        Baseline.NetCost = NetCostCalc(Baseline.GeneratorState,Time,Input);
+        Baseline.NetCost = NetCostCalc(Baseline.GeneratorState,Time/24+DateSim,'Dispatch');
         disp(['Standard Dynamic Economic Dispatch cost is : ', num2str(sum(Baseline.NetCost))])
         plotDispatch2(Baseline.GeneratorState,Demand,Time,10)
         coststr = {['Cost: $' num2str(round(sum(Baseline.NetCost),2))]};

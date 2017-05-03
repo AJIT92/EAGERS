@@ -99,6 +99,6 @@ elseif r>1 %interpolate between timesteps
         for k = 1:1:length(TestData.Demand.(S{j})(x1,:))
             interpData.Demand.(S{j})(:,k) = interpData.Demand.(S{j})(:,k).*(1+Noise);%% add noise
         end
-    end  
+    end
     interpData.Temperature = interpData.Temperature.*(1+Noise);%% add noise
 end 

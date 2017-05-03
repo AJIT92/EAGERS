@@ -1,10 +1,11 @@
-function plotDispatch(GeneratorDispatch,Data,Time,D)
+function plotDispatch(Forecast,History)
 %% plot dispatch into GUI, with historical operation
-global Plant
-[m,n] = size(GeneratorDispatch);
+global Plant Model_dir
 nG = length(Plant.Generator);
 stor = [];
-dt = Time' - [0, Time(1:end-1)]';
+Time = (Forecast.Timestamp-Forecast.Timestamp(1))*24;
+D = datevec(Forecast.Timestamp(1));
+
 MaxDODcapacity = zeros(1,nG);
 for i = 1:1:nG
     if isfield(Plant.Generator(i).OpMatA,'Stor') && Plant.Generator(i).Enabled
@@ -14,22 +15,44 @@ for i = 1:1:nG
         end
     end
 end
-hoursF = D(4)+[0,Time];
-[m2,n2] = size(Data);
-backSteps = m2-m;
+hoursF = D(4)+D(5)/60+D(6)/3600+Time;
+%%update status lights
+for i = 1:1:nG
+    x = [];
+    if Plant.Generator(i).Enabled
+        if Forecast.GenDisp(2,i)>0 && Forecast.GenDisp(1,i)==0  %just turned on
+            [x,~] = imread(fullfile(Model_dir,'GUI','Graphics','green.png'));
+        end
+        if (Forecast.GenDisp(2,i)==0 && Forecast.GenDisp(1,i)>0) || (isempty(History) && Forecast.GenDisp(2,i)==0) %just turned off
+        	[x,~] = imread(fullfile(Model_dir,'GUI','Graphics','yellow.png'));
+        end
+    end
+    if ~isempty(x)
+        pSize = pixelSize(Plant.GUIhandles);
+        s = imresize(x,[3*pSize(1) pSize(2)]);
+        set(Plant.GUIhandles.(strcat('GeneratorStat',num2str(i))),'cdata', s);
+    end
+end
+if isempty(History)
+    backSteps = 0;
+    Data = Forecast.GenDisp;
+else
+    backSteps = length(History(:,1))-1;
+    Data = [History;Forecast.GenDisp(2:end,:)];
+end
+dt = [Plant.optimoptions.Resolution*ones(backSteps,1); Time(2:end) - Time(1:end-1);];
 if backSteps>0
-    hoursB = (hoursF(1) - backSteps*Plant.optimoptions.Resolution):Plant.optimoptions.Resolution:(hoursF(1)- Plant.optimoptions.Resolution);
-    hours = [hoursB,hoursF];
+    hoursB = ((hoursF(1) - backSteps*Plant.optimoptions.Resolution):Plant.optimoptions.Resolution:(hoursF(1)- Plant.optimoptions.Resolution))';
+    hours = [hoursB;hoursF];
 else hours = hoursF;
 end
-StoragePower = zeros(m2,n2);
-StorageState = zeros(m2,n2);
+StoragePower = 0*Data;
+StorageState = 0*Data;
 StorageState(:,stor) = Data(:,stor);
 for i = 1:1:length(stor)
     StorageState(:,stor(i)) = StorageState(:,stor(i)) + MaxDODcapacity(i);
-    StoragePower(backSteps+2:end,stor(i)) = (StorageState(backSteps+1:end-1,stor(i)) - StorageState(backSteps+2:end,stor(i)))./dt;  
+    StoragePower(2:end,stor(i)) = (StorageState(1:end-1,stor(i)) - StorageState(2:end,stor(i)))./dt;  
 end
-StoragePower(2:backSteps+1,stor) = (StorageState(1:backSteps,stor) - StorageState(2:backSteps+1,stor))/Plant.optimoptions.Resolution; 
 Data(:,stor) = StoragePower(:,stor);
 nG = length(Plant.Generator);
 Names = cell(nG,1);
@@ -39,7 +62,17 @@ end
 horizon = Plant.optimoptions.Horizon;
 
 S = Plant.optimoptions.Outputs;
-str = get(Plant.GUIhandles.MainTop,'String');
+posElec = get(Plant.GUIhandles.ElecTitle,'Position');
+posHeat = get(Plant.GUIhandles.HeatTitle,'Position');
+posCool = get(Plant.GUIhandles.CoolTitle,'Position');
+if posElec(1) == 42
+    str = 'Electric Dispatch';
+elseif posHeat(1) == 42
+    str = 'Heating Dispatch';
+elseif posCool(1) == 42
+    str = 'Cooling Dispatch';
+end
+
 colorVec = Plant.Plotting.ColorMaps{1};
 if get(Plant.GUIhandles.StackedGraph,'Value')==1
     LINE = false;
@@ -59,15 +92,14 @@ for q = 1:1:length(S)
         h = Plant.GUIhandles.CoolGraph;
         primary = strcmp(str,'Cooling Dispatch');
     end
+    axTick = (ceil(hours(1)):round((hours(end)-hours(1))/12):hours(end));
+    axIndex = mod(axTick,24);
+    axIndex([false,axIndex(2:end)==0]) = 24;
     if primary
         s1 = 1;
-        axTick = hours(1:2:end);
-        axIndex = mod(axTick,24);
         tSize = 12;
     else
         s1 = length(Data(:,1))- length(hoursF) +1;
-        axTick = hours(1:4:end);
-        axIndex = mod(axTick,24);
         tSize = 9;
     end
     if strcmp(get(h,'Visible'),'on')
@@ -109,12 +141,15 @@ for q = 1:1:length(S)
             if include
                 name(end+1) = {Plant.Generator(i).Name};
                 plotBars(:,end+1) = max(0,Data(s1:end,i));
-                if any(Data(:,i)<0)
+                if any(Data(:,i)<0) || isfield(Plant.Generator(i).OpMatA,'Stor')
                     negBars(:,end+1) = -max(0,-Data(s1:end,i));
                     nCorrespond(end+1) = i;
                 end
-                if isfield(Plant.Generator(i).OpMatA,'Stor') && isfield(Plant.Generator(i).OpMatA.output,S{q}) % energy storage
+                if isfield(Plant.Generator(i).OpMatA,'Stor')% energy storage
                     name2(end+1) ={Plant.Generator(i).Name};
+                    if ~any(Data(:,i)<0)
+                        nCorrespond(end+1) = i;
+                    end
                 end
             end
         end
@@ -123,7 +158,7 @@ for q = 1:1:length(S)
         if ~isempty(plotBars)
             colorsPlot = interp1(linspace(0,1,length(colorVec)),colorVec,linspace(0,1,length(Names)));
             plotTime = zeros(2*length(hours(s1:end))-2,1);
-            plotTime(1:2:2*length(hours(s1:end))-2) = [hours(s1),hours(s1+2:end)-.9999]';
+            plotTime(1:2:2*length(hours(s1:end))-2) = [hours(s1);hours(s1+2:end)-.9999*dt(s1+1:end)];
             plotTime(2:2:2*length(hours(s1:end))-2) = hours(s1+1:end);
             posBars = zeros(length(plotBars(:,1))*2-2,length(plotBars(1,:)));
             posBars(1:2:end,:) = plotBars(2:end,:);
@@ -258,3 +293,11 @@ for q = 1:1:length(S)
         end
     end
 end
+
+function pSize = pixelSize(handles)
+set(handles.Switch,'Units','pixels');
+pos1 = get(handles.Switch,'Position');
+set(handles.Switch,'Units','characters');
+pos2 = get(handles.Switch,'Position');
+pSize(1) = pos1(3)/pos2(3);
+pSize(2) = pos1(4)/pos2(4);

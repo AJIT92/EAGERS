@@ -25,81 +25,9 @@ for i = 1:1:nG
         end
     end
 end
-%% create a matrix of all possible combinations
-inc = find(and(QPsingle.Organize.Dispatchable==1, QPsingle.Organize.Enabled==1));
-ninc = find(and(QPsingle.Organize.Dispatchable==0, QPsingle.Organize.Enabled==1));
-n = length(inc);
-lines = 2^n;
-K = zeros(lines,nG); %K is a matrix of all the possible generator on/off combinations 
-if ~isempty(ninc)
-    K(:,ninc) = ones(lines,1)*(ninc); % all systems that are always included
-end
-for j = 1:1:n %all combinations of generators are listed below
-    z = 2^(n-j);
-    r=0;
-    while r+z<=lines
-        K(r+1:r+z,inc(j)) = inc(j);
-        r=r+2*z;
-    end
-end
-
-%% test if each combination is capable of meeting demand
-%if the generators lower bounds are higher than the demand, then the case is invalid and should be removed. 
-%if the generators upper bounds are lower than the demand, then this case does not produce enough and should be removed.
-Outs = fieldnames(netDemand);
-for s = 1:1:length(Outs)
-    %could improve this section to check if feasible with network losses (not sure how)
-    req = [];
-    if strcmp(Outs{s},'E')
-        req = QPsingle.Organize.Balance.Electrical; %rows of Aeq associated with electric demand
-    elseif strcmp(Outs{s},'H')
-        req = QPsingle.Organize.Balance.DistrictHeat; %rows of Aeq associated with heat demand
-    elseif strcmp(Outs{s},'C')
-        req = QPsingle.Organize.Balance.DistrictCool; %rows of Aeq associated with cool demand
-    end
-    Nodes.(Outs{s}) = length(req); %number of nodes in this output category
-    limitU.(Outs{s}) = zeros(1,nG);
-    limitL.(Outs{s}) = zeros(1,nG);
-    for i = 1:1:nG
-        states = QPsingle.Organize.States{i};
-        if~isempty(states)
-            if any(isinf(QPsingle.ub(states)))
-                if any(QPsingle.Aeq(req,states)~=0)
-                    limitU.(Outs{s})(i) = inf;
-                end
-            else
-                limitU.(Outs{s})(i) = limitU.(Outs{s})(i) + sum(QPsingle.Aeq(req,states)*QPsingle.ub(states));
-            end
-            if any(isinf(QPsingle.lb(states)))
-                if any(QPsingle.Aeq(req,states)~=0)
-                    limitL.(Outs{s})(i) = -inf;
-                end
-            else
-                if strcmp(Outs{s},'H') && isfield(QPsingle.Organize,'HeatVented') && any(QPsingle.Organize.HeatVented(1,:))
-                    lb = min(0,sum(QPsingle.Aeq(req,states)*QPsingle.lb(states)));
-                else lb = sum(QPsingle.Aeq(req,states)*QPsingle.lb(states));
-                end
-                limitL.(Outs{s})(i) = limitL.(Outs{s})(i) + lb;
-            end
-        end
-    end
-    sumUB = sum((K(:,inc)>0).*(ones(lines,1)*limitU.(Outs{s})(inc)),2);
-    sumLB = sum((K(:,inc)>0).*(ones(lines,1)*limitL.(Outs{s})(inc)),2);
-    if ~isempty(ninc)
-        if isempty(sumUB)
-            sumUB = 0;
-        end
-        if isempty(sumLB)
-            sumLB = 0;
-        end
-        sumUB = sumUB + sum((K(:,ninc)>0).*(ones(lines,1)*limitU.(Outs{s})(ninc)),2);
-        sumLB = sumLB + sum((K(:,ninc)>0).*(ones(lines,1)*limitL.(Outs{s})(ninc)),2);
-    end
-    keep = (sumUB>=netDemand.(Outs{s})).*(sumLB<=netDemand.(Outs{s}));%keep the rows where the ub is capable of meeting demand and the lower bound is low enough to meet demand
-    lines = nnz(keep);
-    K = K(keep>0,:);
-end
-
+%% create a matrix of all possible combinations (keep electrical and heating together if there are CHP generators, otherwise seperate by product)
+[K,Nodes,Outs,inc] = createCombinations(QPsingle,netDemand);
+[lines,~] = size(K);
 bestCost = inf;%initialize result
 row = 1;
 FeasibleDispatch = zeros(lines,nG+nL);
@@ -147,8 +75,8 @@ if ~isempty(K)
                         if Nodes.(Outs{s}) ==1 % The following definitely works with only 1 node
                             bestCostPerkWh = Cost(feas)/(netDemand.(Outs{s})*dt);
                             nRow = length(K(:,1))-row;%how many rows do you have left
-                            include = inc(limitU.(Outs{s})(inc)>0);%only check generators for this type
-                            if ~isempty(inc) && row<length(K(:,1))
+                            include = inc.(Outs{s});
+                            if ~isempty(include) && row<length(K(:,1))
                                 posCheaperGen = include(logical((minRate(include)<bestCostPerkWh).*(1-(K(row,include)>0))));%possibly cheaper generators that are not on for this case, but could be on
                             else
                                 posCheaperGen = [];

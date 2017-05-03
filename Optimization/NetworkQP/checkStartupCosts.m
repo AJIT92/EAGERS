@@ -2,7 +2,7 @@ function [GenOutput,Binary] = checkStartupCosts(Alt,Binary,StartCost,dt,I,nL)
 %This function finds the n shortest segments of time the generator is on or
 %off, and compares the start-up cost to the alternative configuration that
 %avoids the start or re-start
-n = 4; % # of segments to check
+n = 8; % # of segments to check
 nG = length(StartCost);
 nS = length(Alt.Disp);
 SkipOn = [];
@@ -10,10 +10,14 @@ SkipOff = [];
 %find I(t), index that results in lowest cost once start-up is considered.
 for k = 1:1:n
     %%Try and remove the shortest generator on segment
-    [onSeg, ~] = segmentLength(Binary,StartCost,dt,SkipOn,SkipOff);
-    if isempty(onSeg)
+    [onSeg, offSeg] = segmentLength(Binary,StartCost,dt,SkipOn,SkipOff);
+    if isempty(onSeg) && isempty(offSeg)
         break %no  segments to check
-    else
+    elseif ~isempty(onSeg)
+        %% first check if the prior configuration is always feasible, and if it is cheaper after factoring in start-up cost
+        
+        
+        %% Otherwise find the cheapest alternative
         [~,Ion] = min(onSeg(:,4)+StartCost(onSeg(:,1))'/(2*max(StartCost))); %shortest segment, and if equal lengths, highest start cost
         %only allow generators that are on at begining or end to be involved (or that have smaller start-up cost)
         Ialt = I;
@@ -46,9 +50,12 @@ for k = 1:1:n
     
     %%Try and remove the shortest generator off segment
     [~, offSeg] = segmentLength(Binary,StartCost,dt,SkipOn,SkipOff);
-    if isempty(offSeg)
+    if isempty(onSeg) && isempty(offSeg)
         break %no  segments to check
-    else
+    elseif ~isempty(offSeg)
+        %% first check if the prior configuration is always feasible, and if it is cheaper after factoring in start-up cost
+        
+        %% Otherwise find the cheapest alternative
         [~,Ioff] = min(offSeg(:,4)+StartCost(offSeg(:,1))'/(2*max(StartCost))); %shortest segment, and if equal lengths, highest start cost
         %only allow generators that are on at begining or end to be involved (or that have smaller start-up cost)
         Ialt = I;

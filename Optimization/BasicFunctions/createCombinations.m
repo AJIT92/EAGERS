@@ -1,4 +1,4 @@
-function [K, Nodes,Outs,include] = createCombinations(QP,netDemand)
+function K = createCombinations(QP,netDemand)
 global Plant
 Outs = fieldnames(Plant.Data.Demand);
 nG = length(Plant.Generator);
@@ -24,10 +24,11 @@ for s = 1:1:length(Outs)
             if isempty(strfind(Plant.Generator(i).Type,'Utility')) &&  isempty(strfind(Plant.Generator(i).Type,'Storage')) && Plant.Generator(i).Enabled
                 inc(i) = true;
             end
+            if strcmp(Outs{s},'E') && strcmp(Plant.Generator(i).Type,'Chiller')
+                inc(i) = false; %avoid chillers during electric combinations
+            end
         end
     end
-    
-    include.(Outs{s}) = find(inc);
     if (strcmp(Outs{s},'E') && isCHP) %combine heaters into CHP case
         for i = 1:1:nG
             if  isempty(strfind(Plant.Generator(i).Type,'Utility')) &&  isempty(strfind(Plant.Generator(i).Type,'Storage')) && Plant.Generator(i).Enabled && isfield(Plant.Generator(i).OpMatA.output,'H')
@@ -65,7 +66,6 @@ for s = 1:1:length(Outs)
     elseif strcmp(Outs{s},'C')
         req = QP.Organize.Balance.DistrictCool; %rows of Aeq associated with cool demand
     end
-    Nodes.(Outs{s}) = length(req); %number of nodes in this output category
     limitU.(Outs{s}) = zeros(1,nG);
     limitL.(Outs{s}) = zeros(1,nG);
     for i = 1:1:nG

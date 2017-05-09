@@ -6,14 +6,12 @@ function agregateSSmodel(SSi)
 global Plant GenSSindex SSmpc GendX
 nG = length(Plant.Generator);
 GenSSindex = [];
-include = {'CHP Generator', 'Electric Generator','Chiller','Heater'};
 gen = [];
 nCHP = 0;
 for i=1:1:nG
-    if ismember(cellstr(Plant.Generator(i).Type),include)
+    if ~isempty(SSi) && ~isempty(SSi(i).A)
         gen(end+1) = i;
-        Outs = fieldnames(Plant.Generator(i).OpMatB.output);
-        if ismember('H',Outs) && ismember('E',Outs)
+        if isfield(Plant.Generator(i).OpMatB.output,'H') && isfield(Plant.Generator(i).OpMatB.output,'E')
             nCHP = nCHP+1;
         end
     end
@@ -48,10 +46,12 @@ for i = 1:1:length(gen)
     end 
     r = r+1; %input #
 end
-SS.A = A;
-SS.B = B;
-SS.C = C;
-SS.D = zeros(length(C(:,1)),length(B(1,:)));
-SS.Dt = 1; %sampling time
-% SSmpc = changeTimestep(SS,Plant.optimoptions.Tmpc,1);
-% GendX = zeros(1,nG);
+if ~isempty(SSi)
+    SS.A = A;
+    SS.B = B;
+    SS.C = C;
+    SS.D = zeros(length(C(:,1)),length(B(1,:)));
+    SS.Dt = 1; %sampling time
+    % SSmpc = changeTimestep(SS,Plant.optimoptions.Tmpc,1);
+    % GendX = zeros(1,nG);
+end

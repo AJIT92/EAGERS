@@ -52,18 +52,12 @@ handles.output = hObject;
 % Update handles structure
 guidata(hObject, handles);
 
-global Plant Model_dir
+global Plant SYSINDEX %Model_dir
+SYSINDEX = 1;
 set(gcf,'Name','DISPATCH')
 movegui(gcf,'center');
-if ~isfield(Plant.optimoptions,'method') || strcmp(Plant.optimoptions.method,'Planning')
+if strcmp(Plant.optimoptions.method,'Planning')
     Plant.optimoptions.method = 'Dispatch';
-end
-if ~isfield(Plant.optimoptions,'MixedInteger')
-    Plant.optimoptions.MixedInteger = true;
-end
-if ~isfield(Plant.optimoptions,'SpinReserve')
-    Plant.optimoptions.SpinReserve = false;
-    Plant.optimoptions.SpinReservePerc = 0;
 end
 
 %Set handles for communications
@@ -74,7 +68,29 @@ set(handles.editMeasureInput,'string','--')
 set(handles.editMeasurePrimary,'string','--')
 set(handles.editMeasureSecondary,'string','--')
 
-setupTabs(hObject, handles);
+%% Set up Main Tabs
+% Assumptions:
+% 1. Tags of main tab static text boxes are of form, 'MainTab1',
+% 'MainTab2', etc.
+% 2. Tags of main tab panels are of form, 'uipanelMain1', 'uipanelMain2',
+% etc.
+TabText = {'Main Window';'Market Services';'Historian/Forecast';'Control Options';'Communication'};
+set(hObject,'UserData',TabText);
+for i = 1:length(TabText)
+    j = num2str(i);
+    % panel management
+    set(handles.(strcat('MainTab',j)),'Units','characters','String',TabText{i});
+    set(handles.(strcat('uipanelMain',j)),'Units','characters','BorderType','none')
+    if i ==1
+        pan1pos = get(handles.uipanelMain1,'Position');
+        pos = get(handles.MainTab1','Position');
+        set(handles.MainTab1,'Position',[pos(1),pos(2),pos(3),pos(4)+.5])
+    else
+        pos2 = get(handles.(strcat('uipanelMain',j)),'Position');
+        set(handles.(strcat('uipanelMain',j)),'Position',[pan1pos(1), pan1pos(2)+(pan1pos(4)-pos2(4)), pos2(3), pos2(4)])
+        set(handles.(strcat('uipanelMain',j)),'Visible','off')
+    end
+end
 
 %make gen list for tabs 1 and 5
 list={};
@@ -87,18 +103,22 @@ for i=1:length(Plant.Generator)
 end
 set(handles.uipanelMain1,'UserData',list)
 
+% %make swap button
+% set(handles.SwitchChart,'Units','pixels')
+% pos = get(handles.SwitchChart,'Position');
+% [x,map] = imread(fullfile(Model_dir,'GUI','Graphics','swap.png'));
+% s = imresize(x,[pos(3) pos(4)]);
+% set(handles.SwitchChart,'cdata',s)
+
+networkNames = fieldnames(Plant.Network);
+handles = PlotAxes_Setup(hObject, eventdata, handles,networkNames,1);
+handles = PlotAxes_Setup(hObject, eventdata, handles,networkNames,3);
+
 Plant.Plotting.ColorNames = {'parula';'autumn';'cool';'spring';'summer';'winter';};
 for i = 1:1:length(Plant.Plotting.ColorNames)
-    colormap(handles.ElectricGraph,Plant.Plotting.ColorNames{i});
-    Plant.Plotting.ColorMaps{i} = colormap(handles.ElectricGraph);
+    colormap(handles.ResultPlot1,Plant.Plotting.ColorNames{i});
+    Plant.Plotting.ColorMaps{i} = colormap(handles.ResultPlot1);
 end
-
-%make swap button
-set(handles.SwitchChart,'Units','pixels')
-pos = get(handles.SwitchChart,'Position');
-[x,map] = imread(fullfile(Model_dir,'GUI','Graphics','swap.png'));
-s = imresize(x,[pos(3) pos(4)]);
-set(handles.SwitchChart,'cdata',s)
 
 handles = GenList_Make(handles);
 set(handles.uipanelMain1,'Visible','off')
@@ -106,8 +126,6 @@ set(handles.uipanelMain5,'Visible','on')
 handles = GenList_Make(handles);
 set(handles.uipanelMain5,'Visible','off')
 set(handles.uipanelMain1,'Visible','on')
-
-Plant.GUIhandles = handles;
 
 set(handles.constant, 'value', strcmp(Plant.optimoptions.tspacing,'constant'));
 set(handles.linear, 'value', strcmp(Plant.optimoptions.tspacing, 'linear'));
@@ -139,57 +157,30 @@ set(handles.Dispatch, 'value', strcmp(Plant.optimoptions.method,'Dispatch'));
 set(handles.Topt, 'string', Plant.optimoptions.Topt);
 set(handles.Tmpc, 'string', Plant.optimoptions.Tmpc);
 
-MainWindow_Setup(hObject, eventdata, handles);
-
-Plant.Plotting.ColorNames = {'parula';'autumn';'cool';'spring';'summer';'winter';};
-for i = 1:1:length(Plant.Plotting.ColorNames)
-    colormap(handles.ElectricGraph,Plant.Plotting.ColorNames{i});
-    Plant.Plotting.ColorMaps{i} = colormap(handles.ElectricGraph);
-end
+set(handles.SES, 'value', false);
+set(handles.ARIMA, 'value', false);
+set(handles.NeuralNet, 'value', false);
+set(handles.Surface, 'value', false);
+set(handles.Perfect, 'value', false);
+set(handles.(Plant.optimoptions.forecast), 'value', true);
 
 %Update forecast handles
 days = round(Plant.Data.Timestamp(end)-Plant.Data.Timestamp(1));
 set(handles.sliderZoom,'Min',1,'Max',4,'Value',1,'SliderStep',[1/3,1/3])
 set(handles.sliderDate,'Min',1,'Max',2,'Value',1,'SliderStep',[1/(days-1),1/(days-1)])
 set(handles.sliderDate,'Max',2)
-
 %%put something into axes
 % InitialDispatch
+
+Plant.GUIhandles = handles;
+
 
 % --- Outputs from this function are returned to the command line.
 function varargout = DISPATCH_OutputFcn(hObject, eventdata, handles) 
 %ask user to save?
 
-% Contains setup for tabs
-function setupTabs(hObject, handles)
-%% Main Tabs
-% Assumptions:
-% 1. Tags of main tab static text boxes are of form, 'MainTab1',
-% 'MainTab2', etc.
-% 2. Tags of main tab panels are of form, 'uipanelMain1', 'uipanelMain2',
-% etc.
-TabText = {'Main Window';'Market Services';'Historian/Forecast';'Control Options';'Communication'};
-set(hObject,'UserData',TabText);
-
-for i = 1:length(TabText)
-    j = num2str(i);
-    % panel management
-    set(handles.(strcat('MainTab',j)),'Units','characters','String',TabText{i});
-    set(handles.(strcat('uipanelMain',j)),'Units','characters','BorderType','none')
-    if i ==1
-        pan1pos = get(handles.uipanelMain1,'Position');
-        pos = get(handles.MainTab1','Position');
-        set(handles.MainTab1,'Position',[pos(1),pos(2),pos(3),pos(4)+.5])
-    else
-        pos2 = get(handles.(strcat('uipanelMain',j)),'Position');
-        set(handles.(strcat('uipanelMain',j)),'Position',[pan1pos(1), pan1pos(2)+(pan1pos(4)-pos2(4)), pos2(3), pos2(4)])
-        set(handles.(strcat('uipanelMain',j)),'Visible','off')
-    end
-end
-
 % Main tabs callback
 function mainTab_Callback(hObject, eventdata, handles)
-global Plant
 n = get(hObject,'Tag');
 n = n(end);
 m = [];
@@ -224,165 +215,78 @@ set(handles.(strcat('uipanelMain',n)),'Visible','on')
 if strcmp(n,'3')
     ForecastPlot(handles)
 elseif strcmp(n,'1')
-    MainWindow_Setup(hObject, eventdata, handles)
+%     MainWindow_Setup(hObject, eventdata, handles)
 elseif strcmp(n,'4')
-    set(handles.Interval,'string',Plant.optimoptions.Interval);
-    set(handles.Horizon, 'string', Plant.optimoptions.Horizon);
-    set(handles.Resolution, 'string', Plant.optimoptions.Resolution);
-    set(handles.Topt, 'string', Plant.optimoptions.Topt);
-    set(handles.Tmpc, 'string', Plant.optimoptions.Tmpc);
-    set(handles.nsSmooth, 'string', Plant.optimoptions.nsSmooth);
-    set(handles.scaletime, 'string', Plant.optimoptions.scaletime);
-    set(handles.fastsimulation, 'value', Plant.optimoptions.fastsimulation);
-    set(handles.slowsimulation, 'value', ~Plant.optimoptions.fastsimulation);
-    set(handles.constant, 'value', strcmp(Plant.optimoptions.tspacing,'constant'));
-    set(handles.linear, 'value', strcmp(Plant.optimoptions.tspacing, 'linear'));
-    set(handles.logarithm, 'value', strcmp(Plant.optimoptions.tspacing, 'logarithm'));
-    set(handles.manual, 'value', strcmp(Plant.optimoptions.tspacing, 'manual'));
-    set(handles.sequential, 'value', Plant.optimoptions.sequential);
-    set(handles.simultaneous, 'value', ~Plant.optimoptions.sequential);
-    set(handles.excessHeat, 'value', Plant.optimoptions.excessHeat);
+
 end
 
-% --- Populates the Main Window Tab 
-function MainWindow_Setup(hObject, eventdata, handles)
+% --- Creates plots on the Main Window and Forecasting Tabs
+function handles = PlotAxes_Setup(hObject, eventdata, handles,networkNames,tab)
+networkNames = networkNames(~strcmp('name',networkNames));
+networkNames = networkNames(~strcmp('Equipment',networkNames));
+nPlot = length(networkNames);
+if nPlot ==1 %1 very large plot
+    Pos = [50 3 150 30];
+else %1 large plot and n-1 smaller plots
+    Pos = [50 15 77 26;];
+    for j = 2:nPlot
+        Pos(j,:) = [150 3+(j-2)*40/(nPlot-1) 50 min(20,(40/(nPlot-1)-4))];
+    end
+end
+if tab==1
+    name = 'Result';
+else name = 'Forecast';
+end
+quote='''';
+for i = 1:1:nPlot
+    handles.(strcat(name,'Plot',num2str(i))) = axes('Units','characters',...
+        'Position', Pos(i,:),...
+        'Tag', strcat(name,'Plot',num2str(i)),...
+        'Parent', handles.(strcat('uipanelMain',num2str(tab))),...
+        'Visible','on');
+    callback = strcat('@(hObject,eventdata)DISPATCH(',quote,'PlotSwitch',quote,',hObject)');
+    handles.(strcat(name,'Name',num2str(i))) = uicontrol('Style', 'pushbutton', 'String', networkNames{i},...
+        'Units','characters',...
+        'Position', [Pos(i,1)+4,Pos(i,2)+Pos(i,4)+.25,45,2],...
+        'BackGroundColor',[0.94 0.94 0.94],...
+        'Tag', strcat(name,'Name',num2str(i)),...
+        'FontSize',16,...
+        'FontUnits','points',...
+        'FontWeight','bold',...
+        'Parent', handles.(strcat('uipanelMain',num2str(tab))),...
+        'Callback',eval(callback),...
+        'Visible','on',...
+        'UserData',i);
+end
+
+function PlotSwitch(hObject)
+%if you pick the main plot and it is network1, swap with plot 2, 
+% otherwise swap the small plot picked and main plot
 global Plant
-Plant.optimoptions.method = 'Dispatch';
-
-if ismember('E',Plant.optimoptions.Outputs)
-    set(handles.checkboxElectric,'value',1)
-    set(handles.ElecTitle,'Visible','on')
-    set(Plant.GUIhandles.ElectricGraph,'Visible','on')
-    set(handles.Forecast,'Visible','on')
-    MakeMain('Electric Dispatch',handles)%Always make Electric the default if it exists
-else
-    set(handles.checkboxElectric,'value',0)
-    set(handles.ElecTitle,'Visible','off')
-    set(Plant.GUIhandles.ElectricGraph,'Visible','off')
-    set(handles.Forecast,'Visible','off')
-    %% move and re-size heat or cooling dispatch axes & title
+networkNames = fieldnames(Plant.Network);
+networkNames = networkNames(~strcmp('name',networkNames));
+networkNames = networkNames(~strcmp('Equipment',networkNames));
+nPlot = length(networkNames);
+net = get(hObject,'String');
+plotI = get(hObject,'UserData');
+netI = find(strcmp(net,networkNames));
+for i = 1:1:nPlot %put names back to default pos
+    set(Plant.GUIhandles.(strcat('ResultName',num2str(i))),'String',networkNames{i});
 end
-if ismember('H',Plant.optimoptions.Outputs)
-    set(handles.checkboxHeat,'Value',1)
-    set(handles.HeatFore,'Visible','on')
-    set(handles.HeatTitle,'Visible','on')
-    set(Plant.GUIhandles.HeatGraph,'Visible','on')
-    if length(Plant.optimoptions.Outputs) == 1 || (length(Plant.optimoptions.Outputs) == 2 && ~ismember('E',Plant.optimoptions.Outputs))
-        MakeMain('Heating Dispatch',handles)
+    
+if netI == plotI %graph is currently in its default position (move to primary)
+    if netI == 1 && nPlot>1%already is primary swap with 2
+        set(Plant.GUIhandles.ResultName1,'String',networkNames{2});
+        set(Plant.GUIhandles.ResultName2,'String',networkNames{1});
     else
-        set(handles.HeatTitle,'Position',[150,42,40,2])
-        set(Plant.GUIhandles.HeatGraph,'Position',[150,24,59,17.5])
-    end
-else
-    set(handles.checkboxHeat,'Value',0)
-    set(handles.HeatTitle,'Visible','off')
-    set(Plant.GUIhandles.HeatGraph,'Visible','off')
-    set(handles.HeatFore,'Visible','off')
-end
-if ismember('C',Plant.optimoptions.Outputs)
-    set(handles.checkboxCooling,'Value',1)
-    set(handles.CoolFore,'Visible','on')
-    set(handles.CoolTitle,'Visible','on')
-    set(Plant.GUIhandles.CoolGraph,'Visible','on')    
-    if length(Plant.optimoptions.Outputs) == 1
-        MakeMain('Cooling Dispatch',handles)
-    elseif length(Plant.optimoptions.Outputs) == 2
-        set(handles.CoolTitle,'Position',[150,42,40,2])
-        set(Plant.GUIhandles.CoolGraph,'Position',[150,24,59,17.5])
-    else
-        set(handles.CoolTitle,'Position',[150,20,40,2])
-        set(Plant.GUIhandles.CoolGraph,'Position',[150,2,59,17.5])
-    end
-else
-    set(handles.checkboxCooling,'Value',0)
-    set(handles.CoolTitle,'Visible','off')
-    set(Plant.GUIhandles.CoolGraph,'Visible','off')
-    set(handles.CoolFore,'Visible','off')
-end
-if ismember('S',Plant.optimoptions.Outputs)
-    set(handles.checkboxSteam,'Value',1) 
-else
-    set(handles.checkboxSteam,'Value',0)
-end
-
-
-% --- Executes on button press in SwitchChart.
-function SwitchChart_Callback(hObject, eventdata, handles)
-global Plant
-order = Plant.optimoptions.Outputs;
-if ismember('E',order)
-    e = get(Plant.GUIhandles.ElectricGraph,'Position');
-    et = get(Plant.GUIhandles.ElecTitle,'Position');
-end
-if ismember('H',order)
-    h = get(Plant.GUIhandles.HeatGraph,'Position');
-    ht = get(Plant.GUIhandles.HeatTitle,'Position');
-end
-if ismember('C',order)
-    c = get(Plant.GUIhandles.CoolGraph,'Position');
-    ct = get(Plant.GUIhandles.CoolTitle,'Position');
-end
-if length(order) == 3
-        set(Plant.GUIhandles.ElecTitle,'Position',ct);
-        set(Plant.GUIhandles.HeatTitle,'Position',et);
-        set(Plant.GUIhandles.CoolTitle,'Position',ht);
-        set(Plant.GUIhandles.ElectricGraph,'Position',c);
-        set(Plant.GUIhandles.HeatGraph,'Position',e);
-        set(Plant.GUIhandles.CoolGraph,'Position',h);
-elseif length(order) ==2
-    if ismember('E',order) && ismember('H',order)
-        set(Plant.GUIhandles.ElecTitle,'Position',ht);
-        set(Plant.GUIhandles.HeatTitle,'Position',et);
-        set(Plant.GUIhandles.ElectricGraph,'Position',h);
-        set(Plant.GUIhandles.HeatGraph,'Position',e);
-    elseif ismember('E',order) && ismember('C',order)
-        set(Plant.GUIhandles.ElecTitle,'Position',ct);
-        set(Plant.GUIhandles.CoolTitle,'Position',et);
-        set(Plant.GUIhandles.CoolGraph,'Position',c);
-        set(Plant.GUIhandles.ElectricGraph,'Position',e);
-    elseif ismember('H',order) && ismember('C',order)
-        set(Plant.GUIhandles.HeatTitle,'Position',ct);
-        set(Plant.GUIhandles.CoolTitle,'Position',ht);
-        set(Plant.GUIhandles.CoolGraph,'Position',c);
-        set(Plant.GUIhandles.HeatGraph,'Position',h);
+        set(Plant.GUIhandles.ResultName1,'String',networkNames{netI});
+        set(Plant.GUIhandles.(strcat('ResultName',num2str(netI))),'String',networkNames{1});
     end
 end
-
-%If only 1 output, make it main graph
-function MakeMain(hObject, handles)
-global Plant
-maint = [42,45,50,2];%Main Title Position
-main = [42,21,86,23];
-if strcmp(hObject,'Electric Dispatch')
-    set(Plant.GUIhandles.ElectricGraph,'Position',main);
-    set(handles.ElecTitle,'Position',maint);
-elseif strcmp(hObject,'Heating Dispatch')
-    set(Plant.GUIhandles.HeatGraph,'Position',main);
-    set(handles.HeatTitle,'Position',maint);
-else
-    set(Plant.GUIhandles.CoolGraph,'Position',main);
-    set(handles.CoolTitle,'Position',maint);
-end
-
-% --- Executes on button press in ShowCumulative.
-function ShowCumulative_Callback(hObject, eventdata, handles)
-if get(hObject,'Value')
-    set(handles.CumulativeGraph,'Visible','on')
-    set(handles.HeatGraph,'Visible','off')
-    set(handles.CoolGraph,'Visible','off')
-else
-    set(handles.CumulativeGraph,'Visible','off')
-    if ismember('H',Plant.optimoptions.Outputs)
-        set(handles.HeatGraph,'Visible','on')
-    end
-    if ismember('H',Plant.optimoptions.Outputs)
-        set(handles.CoolGraph,'Visible','on')
-    end
-end
-
 
 function handles = GenList_Make(handles)
 global Plant Model_dir
+quote='''';
 list = get(handles.uipanelMain1,'UserData');
 if strcmp(get(handles.uipanelMain1,'Visible'),'on')
     r = 'Main';
@@ -412,8 +316,8 @@ for i=1:1:nG
     elseif p ==5
         pos = 26 - 2*(i-prev);
     end
-    callback = strcat('@(hObject,eventdata)DISPATCH(Gen',r,'_Callback,hObject,eventdata,guidata(hObject))');
-    btn = uicontrol('Style', 'pushbutton', 'String', list{i},...
+    callback = strcat('@(hObject,eventdata)DISPATCH(',quote,'Gen',r,'_Callback',quote,',hObject,eventdata,guidata(hObject))');
+    handles.(strcat('Generator',num)) = uicontrol('Style', 'pushbutton', 'String', list{i},...
     'Units','characters',...
     'Position', [1 pos 25 1.8],...
     'Tag', strcat('Generator',num),...
@@ -421,12 +325,11 @@ for i=1:1:nG
     'Parent', handles.(strcat('uipanelMain',num2str(p))),...
     'Callback',eval(callback),...
     'Visible',vis,...
-    'UserData',i);
-    handles.(strcat('Generator',num)) = btn;
-    set(handles.(strcat('Generator',num)),'BackgroundColor',colorsPlot(i,:))
+    'UserData',i,...
+    'BackgroundColor',colorsPlot(i,:));
     if p ==1 %Only make Status buttons on Main Window
         pos = 45.5 - 2*(i-prev);
-        callback = strcat('@(hObject,eventdata)DISPATCH(Status_Callback,hObject,eventdata,guidata(hObject))');
+        callback = strcat('@(hObject,eventdata)DISPATCH(',quote,'Status_Callback',quote,',hObject,eventdata,guidata(hObject))');
         if Plant.Generator(i).Enabled
             [x,map] = imread(fullfile(Model_dir,'GUI','Graphics','green.png'));
         else
@@ -438,7 +341,7 @@ for i=1:1:nG
             enableGen  = 'bold';
         else enableGen  = 'normal';
         end
-        btn = uicontrol('Style', 'pushbutton', 'String', '',...
+        handles.(strcat('GeneratorStat',num)) = uicontrol('Style', 'pushbutton', 'String', '',...
         'Units','characters',...
         'Position', [27 pos 3 1],...
         'Tag', strcat('GeneratorStat',num),...
@@ -448,7 +351,6 @@ for i=1:1:nG
         'Callback',eval(callback),...
         'Visible',vis,...
         'UserData',i);
-        handles.(strcat('GeneratorStat',num)) = btn;
     end
 end
 % --- Executes on button press in PrevGen1.
@@ -542,20 +444,20 @@ end
 
 %When Component Buttons on the main tab are clicked
 function GenMain_Callback(hObject, eventdata, handles)
-global Plant
+global Plant SYSINDEX
 gen = get(hObject,'String');
-i = get(hObject,'UserData');
-size = num2str(Plant.Generator(i).Size);
-set(handles.SelGen,'Title',Plant.Generator(i).Name,'UserData',i)
+SYSINDEX = get(hObject,'UserData');
+size = num2str(Plant.Generator(SYSINDEX).Size);
+set(handles.SelGen,'Title',Plant.Generator(SYSINDEX).Name,'UserData',SYSINDEX)
 if ~isempty(strfind(gen,'Utility'))
     set(handles.GenSpec1,'String','Inf')
 else
     set(handles.GenSpec1,'String',size)
 end
-if Plant.Generator(i).Enabled == 1
+if Plant.Generator(SYSINDEX).Enabled == 1
     set(handles.GenEnable,'Value',1)
     set(handles.GenDisable,'Value',0)
-elseif Plant.Generator(i).Enabled == 0
+elseif Plant.Generator(SYSINDEX).Enabled == 0
     set(handles.GenEnable,'Value',0)
     set(handles.GenDisable,'Value',1)
 end
@@ -574,16 +476,18 @@ end
 set(handles.SelGen,'Title',Plant.Generator(i).Name,'UserData',i)
 if strcmp(get(hObject,'FontWeight'),'bold')
     Plant.Generator(i).Enabled = 0;
+    set(hObject,'FontWeight','normal')
     [x,map] = imread(fullfile(Model_dir,'GUI','Graphics','red.png'));
 else
     Plant.Generator(i).Enabled = 1;
+    set(hObject,'FontWeight','bold')
     [x,map] = imread(fullfile(Model_dir,'GUI','Graphics','green.png'));
 end
 set(handles.GenEnable,'value',Plant.Generator(i).Enabled)
 set(handles.GenDisable,'Value',~Plant.Generator(i).Enabled)
 pSize = pixelSize(handles);
 s = imresize(x,[3*pSize(1) pSize(2)]);
-set(hObject,'FontWeight','bold','cdata',s)
+set(hObject,'cdata',s)
     
 function pSize = pixelSize(handles)
 set(handles.Switch,'Units','pixels');
@@ -595,11 +499,16 @@ pSize(2) = pos1(4)/pos2(4);
 
 % --- Executes on button press in Start.
 function Start_Callback(hObject, eventdata, handles)
-global Virtual RealTime DispatchWaitbar 
+global Plant Virtual RealTime DispatchWaitbar 
 Virtual = 1;
 RealTime = 0;
 set(handles.Start,'Value',1);%reset start button
 set(handles.Stop,'Value',0);%reset stop button
+A = {'OpMatA';'OpMatB';'OneStep';'Online';'Dispatch';'Predicted';'RunData';'NetCost';'Baseline'};
+remove = ismember(A,fieldnames(Plant));
+if any(remove)
+    Plant = rmfield(Plant,A(remove));
+end
 DispatchWaitbar=waitbar(0,'Running Dispatch','Visible','off');
 RunOptimization
 waitfor(DispatchWaitbar)
@@ -643,7 +552,7 @@ s = imresize(x,[3*pSize(1) pSize(2)]);
 num = 2*length(Plant.Generator) - (2*i - 1);
 set(handles.uipanelMain1.Children(num),'FontWeight','normal','cdata',s)
         
-
+%% for manual control?
 function GenStatus1_Callback(hObject, eventdata, handles)
 function GenStatus1_CreateFcn(hObject, eventdata, handles)
 if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
@@ -657,16 +566,6 @@ if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgr
 end
 
 function GenSpec1_Callback(hObject, eventdata, handles)
-global Plant
-type = get(handles.SelGen,'Title');
-size = str2double(get(hObject,'string'));
-set(handles.GenSpec1,'Value',str2double(get(hObject,'string')));
-for i = 1:length(Plant.Generator)
-    if strcmp(Plant.Generator(i).Name,type) && ~strcmp(Plant.Generator(i).Type,'Utility')%Cant update a utility size
-        Plant.Generator(i).Size = size;
-    end
-end
-
 function GenSpec1_CreateFcn(hObject, eventdata, handles)
 if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
     set(hObject,'BackgroundColor','white');
@@ -677,6 +576,7 @@ function GenSpec2_CreateFcn(hObject, eventdata, handles)
 if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
     set(hObject,'BackgroundColor','white');
 end
+
 
 % --- Executes on button press in LineGraph.
 function LineGraph_Callback(hObject, eventdata, handles)
@@ -865,31 +765,6 @@ end
 
 
 %% Control Options Tab
-function checkboxElectric_Callback(hObject, eventdata, handles)
-checkOutputs
-function checkboxHeat_Callback(hObject, eventdata, handles)
-checkOutputs
-function checkboxCooling_Callback(hObject, eventdata, handles)
-checkOutputs
-function checkboxSteam_Callback(hObject, eventdata, handles)
-checkOutputs
-
-function checkOutputs
-global Plant
-Plant.Optimoptions.Outputs = {};
-if get(handles.checkboxElectric,'Value')
-    Plant.Optimoptions.Outputs(end+1) = 'E';
-end
-if get(handles.checkboxHeat,'Value')
-    Plant.Optimoptions.Outputs(end+1) = 'H';
-end
-if get(handles.checkboxCooling,'Value')
-    Plant.Optimoptions.Outputs(end+1) = 'C';
-end
-if get(handles.checkboxSteam,'Value')
-    Plant.Optimoptions.Outputs(end+1) = 'S';
-end
-
 function changingtimesteps_SelectionChangeFcn(hObject, eventdata, handles)
 global Plant
 switch get(eventdata.NewValue,'Tag')
@@ -1041,6 +916,22 @@ function noSpinReserve_Callback(hObject, eventdata, handles)
 function SpinReserve_Callback(hObject, eventdata, handles)
 function Control_Callback(hObject, eventdata, handles)
 function Dispatch_Callback(hObject, eventdata, handles)
+
+
+function Forecast_SelectionChangeFcn(hObject, eventdata, handles)
+global Plant
+switch get(eventdata.NewValue,'Tag')
+    case 'SES'
+        Plant.optimoptions.forecast = 'SES';
+    case 'ARIMA'
+        Plant.optimoptions.forecast = 'ARIMA';
+    case 'NeuralNet'
+        Plant.optimoptions.forecast = 'NeuralNet';
+    case 'Surface'
+        Plant.optimoptions.forecast = 'Surface';
+    case 'Perfect'
+        Plant.optimoptions.forecast = 'Perfect';
+end
 
 %% Communication Tab
 %When Component Buttons on the Communication tab are clicked

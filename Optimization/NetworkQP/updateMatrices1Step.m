@@ -92,11 +92,13 @@ for i = 1:1:nG
             QP.f(states) = QP.f(states)*scaleCost(i)*dt;
         else
             if strcmp(Plant.Generator(i).Source,'Electricity')
-                type = 'E';
+                type = 'Electrical';
             elseif strcmp(Plant.Generator(i).Source,'Heat')
-                type = 'H';
+                type = 'DistrictHeat';
             elseif strcmp(Plant.Generator(i).Source,'Cooling')
-                type = 'C';
+                type = 'DistrictCool';
+            elseif strcmp(Plant.Generator(i).Source,'Water')
+                type = 'Hydro';
             end
             if ~isempty(StorPower)%remove expected storage output from beq
                 QP.beq(QP.Organize.StorageEquality(i)) = QP.beq(QP.Organize.StorageEquality(i)) - StorPower(i);

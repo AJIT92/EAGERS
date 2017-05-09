@@ -34,7 +34,7 @@ else
 end
 set(handles.CompName,'String',Gen.Name);
 switch Gen.Type
-    case {'CHP Generator';'ElectricGenerator'}
+    case {'CHP Generator';'Electric Generator'}
         show = {'textEdit1';'textEdit1Units';'compText1'; ...
             'uitableEffCurve';'EffCurve';'ResponseRate';'textResponse';};
         hide = setdiff(uiElmts,show); % everything else not in show
@@ -44,7 +44,7 @@ switch Gen.Type
         OutNames = {'Capacity';'Electricity';};
         Data(:,1) = Gen.Output.Capacity;
         Data(:,2) = Gen.Output.Electricity;
-        if nnz(Gen.Output.Heat) > 0
+        if isfield(Gen.Output,'Heat') && nnz(Gen.Output.Heat) > 0
             Data(:,3) = Gen.Output.Heat;
             OutNames = {'Capacity';'Electricity';'Heat';};
         end
@@ -59,7 +59,7 @@ switch Gen.Type
         end
         plotGenEfficiency(Gen,handles)
         plotResponse(Gen,handles)
-    case {'Utility'}
+    case 'Utility'
         if strcmp(Gen.Source,'Electricity')
             show = {'compText1';'textEdit1';'textEdit1Units'; ...
                 'compText2';'textEdit2';'textEdit2Units';'compText3'; ...
@@ -92,12 +92,13 @@ switch Gen.Type
             for i = 1:1:length(hide)
                 set(handles.(hide{i}),'Visible','off')
             end
-        else %Gen.Source: NG (Natural Gas)
+        else % Gen.Source: NG (Natural Gas)
             show = {'compText1';'textEdit1';'textEdit1Units';};
             hide = setdiff(uiElmts,show); % everything else not in show
             for i = 1:1:length(show)
                 set(handles.(show{i}),'Visible','on')
             end
+            clearGenAxes(handles) % clear all figures
             set(handles.compText1,'String',num2str(Gen.VariableStruct.Rate(1)));
             set(handles.textEdit1,'String','Fuel Rate');
             set(handles.textEdit1Units,'String','($/MMBTU)');
@@ -105,8 +106,22 @@ switch Gen.Type
                 set(handles.(hide{i}),'Visible','off')
             end
         end
-    case {'Solar'}
+    case 'Heater'
+        show = {'textEdit1';'textEdit1Units';'compText1';};
+        hide = setdiff(uiElmts,show); % everything else not in show
+        for i = 1:1:length(show)
+            set(handles.(show{i}),'Visible','on')
+        end
+        clearGenAxes(handles) % clear all figures
+        set(handles.compText1,'String',num2str(Gen.Size));
+        set(handles.textEdit1,'String','Capacity ');
+        set(handles.textEdit1Units,'String','(kW)');
+        for i = 1:1:length(hide)
+            set(handles.(hide{i}),'Visible','off')
+        end
+    case 'Solar'
         show = {'compText1';'textEdit1';'textEdit1Units';};
+        hide = setdiff(uiElmts,show); % everything else not in show
         for i = 1:1:length(show)
             set(handles.(show{i}),'Visible','on')
         end
@@ -114,12 +129,12 @@ switch Gen.Type
         set(handles.textEdit1,'String','Solar Capacity');
         set(handles.textEdit1Units,'String','(kW)');
         clearGenAxes(handles) % clear all figures
-        hide = setdiff(uiElmts,show); % everything else not in show
         for i = 1:1:length(hide)
             set(handles.(hide{i}),'Visible','off')
         end
-    case {'Electric Storage'}
+    case 'Electric Storage'
         show = {'compText1';'textEdit1';'textEdit1Units';};
+        hide = setdiff(uiElmts,show); % everything else not in show
         for i = 1:1:length(show)
             set(handles.(show{i}),'Visible','on')
         end
@@ -127,12 +142,25 @@ switch Gen.Type
         set(handles.textEdit1,'String','Storage Capacity');
         set(handles.textEdit1Units,'String','(kW)');
         clearGenAxes(handles) % clear all figures
-        hide = setdiff(uiElmts,show); % everything else not in show
         for i = 1:1:length(hide)
             set(handles.(hide{i}),'Visible','off')
         end
-    case {'Heating Demands'}
+    case 'Thermal Storage'
+        show = {'compText1';'textEdit1';'textEdit1Units';};
+        hide = setdiff(uiElmts,show); % everything else not in show
+        for i = 1:1:length(show)
+            set(handles.(show{i}),'Visible','on')
+        end
+        set(handles.compText1,'String',num2str(Gen.Size));
+        set(handles.textEdit1,'String','Storage Capacity');
+        set(handles.textEdit1Units,'String','(kW)');
+        clearGenAxes(handles) % clear all figures
+        for i = 1:1:length(hide)
+            set(handles.(hide{i}),'Visible','off')
+        end
+    case 'Heating Demands'
         show = {'compText1';'textEdit1';'textEdit1Units'};
+        hide = setdiff(uiElmts,show); % everything else not in show
         for i = 1:1:length(show)
             set(handles.(show{i}),'Visible','on')
         end
@@ -140,12 +168,12 @@ switch Gen.Type
         set(handles.textEdit1,'String','Demand');
         set(handles.textEdit1Units,'String','(kW)');
         clearGenAxes(handles) % clear all figures
-        hide = setdiff(uiElmts,show); % everything else not in show
         for i = 1:1:length(hide)
             set(handles.(hide{i}),'Visible','off')
         end
-    case {'Hot Water Demands'}
+    case 'Hot Water Demands'
         show = {'compText1';'textEdit1';'textEdit1Units'};
+        hide = setdiff(uiElmts,show); % everything else not in show
         for i = 1:1:length(show)
             set(handles.(show{i}),'Visible','on')
         end
@@ -153,12 +181,12 @@ switch Gen.Type
         set(handles.textEdit1,'String','Demand');
         set(handles.textEdit1Units,'String','(kW)');
         clearGenAxes(handles) % clear all figures
-        hide = setdiff(uiElmts,show); % everything else not in show
         for i = 1:1:length(hide)
             set(handles.(hide{i}),'Visible','off')
         end
-    case {'Cooling Demands'}
+    case 'Cooling Demands'
         show = {'compText1';'textEdit1';'textEdit1Units'};
+        hide = setdiff(uiElmts,show); % everything else not in show
         for i = 1:1:length(show)
             set(handles.(show{i}),'Visible','on')
         end
@@ -166,12 +194,12 @@ switch Gen.Type
         set(handles.textEdit1,'String','Demand');
         set(handles.textEdit1Units,'String','(kW)');
         clearGenAxes(handles) % clear all figures
-        hide = setdiff(uiElmts,show); % everything else not in show
         for i = 1:1:length(hide)
             set(handles.(hide{i}),'Visible','off')
         end
-    case {'AC/DC Conversion'}
+    case 'AC/DC Conversion'
         show = {'compText1';'textEdit1';'textEdit1Units'};
+        hide = setdiff(uiElmts,show); % everything else not in show
         for i = 1:1:length(show)
             set(handles.(show{i}),'Visible','on')
         end
@@ -179,11 +207,10 @@ switch Gen.Type
         set(handles.textEdit1,'String','Conversion Efficiency');
         set(handles.textEdit1Units,'String','(%)');
         clearGenAxes(handles) % clear all figures
-        hide = setdiff(uiElmts,show); % everything else not in show
         for i = 1:1:length(hide)
             set(handles.(hide{i}),'Visible','off')
         end
-    case {'None'} % for when everything has been removed from Plant
+    case 'None' % for when everything has been removed from Plant
         clearGenAxes(handles) % clear all figures
         for i = 1:1:length(uiElmts)
             set(handles.(uiElmts{i}),'Visible','off')

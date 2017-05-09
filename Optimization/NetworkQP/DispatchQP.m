@@ -12,8 +12,10 @@ else
 end
 GenDisp = zeros(nS+1,n);
 if Feasible ~=1
+    Feasible = false;
 %     disp('Infeasible in DispatchQP');
 else
+    Feasible = true;
     for i = 1:1:nG
         if any(QP.Renewable(:,i)~=0)
             GenDisp(2:end,i) = QP.Renewable(:,i);

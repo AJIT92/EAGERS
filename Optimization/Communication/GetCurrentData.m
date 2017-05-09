@@ -1,6 +1,6 @@
 function RealData = GetCurrentData(Date)
 global RealTimeData RealTime Virtual DispatchWaitbar
-if Date ~=inf && Date>(RealTimeData.Timestamp(end-1))% End Operation or Simulation
+if Date ~=inf && any(Date>(RealTimeData.Timestamp(end-1)))% End Operation or Simulation
     if RealTime
         closePorts;
     end
@@ -19,11 +19,20 @@ if Date ~=inf && Date>(RealTimeData.Timestamp(end-1))% End Operation or Simulati
     RealData = [];
 else 
     %% need better indexing system to call current data
-    x1 = max(1,nnz(RealTimeData.Timestamp<=(Date+1e-8))); %need 1e-8 to avoid rounding errors
+    x1 = max(1,nnz(RealTimeData.Timestamp<Date(1))); 
     S = fieldnames(RealTimeData.Demand);
-    RealData.Timestamp = RealTimeData.Timestamp(x1);
-    RealData.Temperature = RealTimeData.Temperature(x1);
-    for i = 1:1:length(S)
-        RealData.Demand.(S{i}) = RealTimeData.Demand.(S{i})(x1,:);
+    RealData.Timestamp = Date;
+    if length(Date) == 1
+        r = (Date - RealTimeData.Timestamp(x1))/(RealTimeData.Timestamp(x1+1) - RealTimeData.Timestamp(x1));
+        RealData.Temperature = (1-r)*RealTimeData.Temperature(x1) + r*RealTimeData.Temperature(x1+1);
+        for i = 1:1:length(S)
+            RealData.Demand.(S{i}) = (1-r)*RealTimeData.Demand.(S{i})(x1,:) + r*RealTimeData.Demand.(S{i})(x1+1,:);
+        end
+    else
+        x2 = max(1,nnz(RealTimeData.Timestamp<Date(end))); 
+        RealData.Temperature = interp1(RealTimeData.Timestamp(x1:x2+1),RealTimeData.Temperature(x1:x2+1),Date);
+        for i = 1:1:length(S)
+            RealData.Demand.(S{i}) = interp1(RealTimeData.Timestamp(x1:x2+1),RealTimeData.Demand.(S{i})(x1:x2+1,:),Date);
+        end
     end
 end

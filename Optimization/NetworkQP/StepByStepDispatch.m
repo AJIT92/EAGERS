@@ -1,6 +1,10 @@
-function GenOutput = StepByStepDispatch(Demand,Renewable,scaleCost,dt,IC,limit,FirstProfile)
+function GenOutput = StepByStepDispatch(Demand,scaleCost,dt,IC,limit,FirstProfile)
 % Time is the time from the current simulation time (DateSim), positive numbers are forward looking
 global Plant dX_dt 
+if license('test','Distrib_Computing_Toolbox') 
+    parallel = true;
+else parallel = false;
+end
 nG = length(Plant.Generator);
 [~,n] = size(Plant.OneStep.organize);
 nL = n-nG;
@@ -28,13 +32,21 @@ if ~isempty(IC)
     GenOutput(1,1:nG) = IC;
 end
 TestCombos = zeros(nS,1); %how many QP optimizations needed to be run in eliminate combinations
+Iterate = zeros(nS,1);
+timeQP = zeros(nS,1);
 %% note #2:  need to account for self discharging of storage
 Outs = fieldnames(Demand);
 Outs = Outs(~strcmp(Outs,'T'));
+if isfield(Demand,'Renewable')
+    Renewable = Demand.Renewable;
+    Outs = Outs(~strcmp(Outs,'Renewable'));
+else Renewable = [];
+end
 I = zeros(nS,1);
 Alt.Disp = cell(nS,1);
 Alt.Cost = cell(nS,1);
 Alt.Binary = cell(nS,1);
+VentedHeat = zeros(nS,1);
 Binary = true(nS+1,nG);
 Dispatchable = logical(Plant.OneStep.Organize.Dispatchable);
 if ic
@@ -72,7 +84,37 @@ for t = 1:1:max(1,nS) %for every timestep
             QP.Organize.Enabled(i) = 1;
         end
     end
-    [Alt.Disp{t},Cost,Alt.Binary{t},I(t),TestCombos(t)] = eliminateCombinations(QP,netDemand,dt(t));%% combination elimination loop
+    timeQP(t) = toc;
+    K = createCombinations(QP,netDemand);%% create a matrix of all possible combinations (keep electrical and heating together if there are CHP generators, otherwise seperate by product)
+    [lines,~] = size(K);
+    FeasibleDispatch = zeros(lines,nG+nL);
+    HeatVent = zeros(lines,1);
+    Cost = zeros(lines,1);
+    feasible = false(lines,1);
+    Iterations = zeros(lines,1);
+    if parallel
+        parfor i = 1:lines
+            [FeasibleDispatch(i,:),Cost(i),feasible(i),Iterations(i),HeatVent(i),~] = eliminateCombinations(QP,netDemand,K(i,:),parallel,[],[],[]);%% combination elimination loop
+        end
+    else
+        nzK = sum(K>0,2);%this is the number of active generators per combination (nonzeros of K)
+        [~, line] = sort(nzK); %sort the rows by number of generators that are on
+        K = K(line,:);
+        %% test the cases for cost
+        for i=1:lines %run the quadprog/linprog for all cases with the least number of generators
+            if i<=length(K(:,1))
+                [FeasibleDispatch(i,:),Cost(i),feasible(i),Iterations(i),HeatVent(i),K] = eliminateCombinations(QP,netDemand,K(i,:),parallel,K,i,min(Cost(1:i)),dt(t));%% combination elimination loop
+            end
+        end
+    end
+    timeQP(t) = toc - timeQP(t);
+    Cost = Cost(feasible);
+    [~,I(t)] = min(Cost);
+    Alt.Binary{t} = K(feasible,:)>0;
+    Alt.Disp{t} = FeasibleDispatch(feasible,:);
+    TestCombos(t) = length(Cost);
+    Iterate(t) = sum(Iterations(feasible))/TestCombos(t);
+    VentedHeat(t) = HeatVent(I(t));
     if isempty(Alt.Disp{t})
         disp(['No feasible combination of generators at step' num2str(t)]);
         BestDispatch = [IC,zeros(1,nL)];
@@ -88,11 +130,18 @@ for t = 1:1:max(1,nS) %for every timestep
         for i = 1:1:length(stor)
             loss = dt(t)*(Plant.Generator(stor(i)).OpMatA.Stor.SelfDischarge*Plant.Generator(stor(i)).OpMatA.Stor.UsableSize);
             Energy = (BestDispatch(stor(i))+StorPower(t,stor(i)))*dt(t);
-            if Energy>0 %discharging
-                EC(stor(i)) = IC(stor(i)) - Energy/Plant.Generator(stor(i)).OpMatA.Stor.DischEff - loss;%change in storage for this power output
-            else %charging
-                EC(stor(i)) = IC(stor(i)) - Energy*Plant.Generator(stor(i)).OpMatA.Stor.ChargeEff - loss; %change in storage for this power output
+            if strcmp(Plant.Generator(stor(i)).Type,'Hydro Storage')
+                conv = 1/Plant.Generator(stor(i)).OpMatA.output.E; %conversion from power (kw) to mass flow (1000 ft^3/s)
+                %% add river segment flow?
+                %%need to update the flow into the next dam T steps ago
+            else
+                if Energy>0 %discharging
+                    conv = 1/Plant.Generator(stor(i)).OpMatA.Stor.DischEff;
+                else %charging
+                    conv = Plant.Generator(stor(i)).OpMatA.Stor.ChargeEff;
+                end
             end
+            EC(stor(i)) = IC(stor(i)) - Energy*conv - loss;%change in storage for this power output
         end
         if strcmp(limit, 'constrained')%if its constrained but not initially constrained then make the last output the initial condition
             IC = EC;
@@ -113,5 +162,7 @@ for i = 1:1:nG
         GenOutput(1+ic:end,i) = Renewable(:,i);
     end
 end
-% disp(['# of combinations tested at each step is ', num2str(TestCombos')]);
+% disp(['Time Spent in QP interations is ', num2str(sum(timeQP))]);
+% disp(['Time not spent in QP is ', num2str(toc-sum(timeQP))]);
+% disp(['Average iterations for each QP is ', num2str(mean(Iterate))]);
 % disp(['Average # of combinations tested is ', num2str(mean(TestCombos))]);

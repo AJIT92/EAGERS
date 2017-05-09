@@ -21,7 +21,9 @@ end
 %need to wait until everything else has been loaded to load the buffer,
 %because it is reliant on how quickly everything else can charge the system
 findbuffer
-
+if ~exist('SSi','var')
+    SSi = [];
+end
 agregateSSmodel(SSi)
 
 
@@ -260,7 +262,6 @@ else %electric battery
     Stor.PeakDisch = (DischCurrent*Stor.Voltage*Stor.DischEff/1000); %PeakDischPower kW out
     Stor.PeakCharge = (ChargeCurrent*Stor.Voltage/Stor.ChargeEff/1000); % PeakChargePower kW in
     Stor.UsableSize  = Stor.Size*(Gen.VariableStruct.MaxDOD/100); % usable size (state x is 0_> usable size, must calculate this initial condition each time from voltage & SOC
-    Stor.MaxDODcapacity = Gen.Size*(1-Gen.VariableStruct.MaxDOD/100);
 end
 
 OpMatA.Stor = Stor;
@@ -345,35 +346,38 @@ OpMatB = OpMatA;
 dX_dt = inf;
 SSi = [];
 
-function [OpMatA, OpMatB, dX_dt,SSi] = loadHydro(Gen)
+function [OpMatA, OpMatB, dX_dt,SSi] = loadHydroStorage(Gen)
 % this function loads the parameters for a hydroelectric plant.
-if Gen.VariableStruct.MaxSpillFlow>0 %has ability to spill flow, vs. generate power
-    OpMatA.states = {'X','Y'};
-    OpMatA.output.W = 1;
-    OpMatA.X.H = 0;
-    OpMatA.X.f = 0;
-    OpMatA.X.lb = 0;
-    OpMatA.X.ub = Gen.Capacity;
-    OpMatA.Y.H = 0;
-    OpMatA.Y.f = 0;
-    OpMatA.Y.lb = 0;
-    OpMatA.Y.ub = Gen.MaxSpillFlow;
-    OpMatA.Ramp.b = [Gen.RampUp; Gen.RampDown];
+global scaleTime
+SSi =[];
+OpMatA.Stor.Size = Gen.Size*scaleTime;
+OpMatA.Stor.SelfDischarge  = 0; %needs to be evaporative losses
+OpMatA.Stor.UsableSize  = OpMatA.Stor.Size*((Gen.VariableStruct.MaxHead-Gen.VariableStruct.MinHead)/Gen.VariableStruct.MaxHead);
+Eff = Gen.VariableStruct.MaxGenCapacity/(Gen.VariableStruct.MaxGenFlow*Gen.VariableStruct.MaxHead/0.01181);%Power (kW)/ideal power in kW
+OpMatA.output.E = Eff*Gen.VariableStruct.MaxHead*84.674;%Power (kW) = efficiency(%) * Flow (1000 ft^3/s) * Head (ft) * 87.674 kJ/ (1000ft^3*ft)
+OpMatA.output.W = 1;
+OpMatA.states = {'X','Z','W'};
 
-    OpMatB = OpMatA;
-    dX_dt = Gen.RampUp;
-    SSi = [];
-else
-    OpMatA.states = {'X'};
-    OpMatA.output.W = 1;
+OpMatA.X.H = 0;
+OpMatA.X.f = 0;
+OpMatA.X.lb = 0;
+OpMatA.X.ub = Gen.Size;
+OpMatA.Ramp.b = [Gen.VariableStruct.RampUp; Gen.VariableStruct.RampDown];
 
-    OpMatA.X.H = 0;
-    OpMatA.X.f = 0;
-    OpMatA.X.lb = 0;
-    OpMatA.X.ub = Gen.Capacity;
-    OpMatA.Ramp.b = [Gen.RampUp; Gen.RampDown];
+%%buffer states
+OpMatA.link.ineq = [-1 0  -1];%-SOC(t)-lowerbuffer<-0.2
+OpMatA.link.ineq = [OpMatA.link.ineq; 1 -1 0];%SOC-upperbuffer<0.8
+OpMatA.link.bineq = [0;0;];
 
-    OpMatB = OpMatA;
-    dX_dt = Gen.RampUp;
-    SSi = [];
-end
+OpMatA.Z.lb = 0;
+OpMatA.Z.ub = 0;
+OpMatA.Z.H = 0;
+OpMatA.Z.f = 0;
+
+OpMatA.W.lb = 0;
+OpMatA.W.ub = 0;
+OpMatA.W.H = 0;
+OpMatA.W.f = 0;
+    
+OpMatB = OpMatA;
+dX_dt = Gen.VariableStruct.RampUp;

@@ -4,22 +4,22 @@ if strcmp(method,'Dispatch')
     Dispatch = Var1;
     Input = 0*Dispatch;
     for i = 1:1:length(Plant.Generator)
-        chiller = 0;
+        skip = false;
         if ~isempty(Plant.Generator(i).Output)
             cap = Plant.Generator(i).Output.Capacity*Plant.Generator(i).Size;
         end
-        eff = [];
         if strcmp(Plant.Generator(i).Type,'Electric Generator') || strcmp(Plant.Generator(i).Type,'CHP Generator')
             eff = Plant.Generator(i).Output.Electricity;
-        elseif strcmp(Plant.Generator(i).Type,'Chiller') && ~isfield(Plant.Data.Demand,'E')%don't include cost if it shows up in generator demand
+        elseif strcmp(Plant.Generator(i).Type,'Chiller') 
             eff = Plant.Generator(i).Output.Cooling;
-            if ~Plant.optimoptions.sequential
-                chiller = 1;
+            if ~Plant.optimoptions.sequential && ~isfield(Plant.Generator(i).OpMatA.output,'E')%don't include cost if it shows up in generator demand
+                skip = true;
             end
         elseif strcmp(Plant.Generator(i).Type,'Heater')
             eff = Plant.Generator(i).Output.Heat;    
+        else skip = true;
         end
-        if ~isempty(eff) && ~chiller %dont add the cost of a chiller if you ran E and C simultaneously, or you will double count the chiller demand
+        if ~skip %dont add the cost of a chiller if you ran E and C simultaneously, or you will double count the chiller demand
             Input(:,i) = Dispatch(:,i)./interp1(cap,eff,Dispatch(:,i));
         elseif strcmp(Plant.Generator(i).Type,'Utility')
             Input(:,i) = Dispatch(:,i);

@@ -41,7 +41,7 @@ if r==1
         interpData.Demand.(S{j})=TestData.Demand.(S{j})(Xi:Xf,:);
     end
 elseif r<1 %extra datum, average points in between
-    NumSteps = (TestData.Timestamp(Xf)-TestData.Timestamp(Xi))*24*3600/Tfreq+r;
+    NumSteps = (TestData.Timestamp(Xf)-TestData.Timestamp(Xi))*24*3600/Tfreq;
     interpData.Timestamp =[];
     interpData.Temperature = zeros(NumSteps,1);
     x1 = Xi;

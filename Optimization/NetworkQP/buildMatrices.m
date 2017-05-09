@@ -1,15 +1,8 @@
-function QP = buildMatrices(varargin)
+function QP = buildMatrices(Op,dt)
 %builds constant matrices for multi-time-step optimization
 %Demands, initial conditions, and utility costs must updated prior to optimization
 global Plant 
-Op = strcat('OpMat',varargin{1});
 nG = length(Plant.Generator);
-if length(varargin)>1
-    dt = varargin(2);
-else
-    Time = buildTimeVector(Plant.optimoptions);%% set up dt vector of time interval length
-    dt = Time - [0; Time(1:end-1)];
-end
 nS = length(dt);
 
 networkNames = fieldnames(Plant.Network);
@@ -22,7 +15,7 @@ nL = sum(nLinet);
 
 Organize.States=cell(1,nG+nL);
 Organize.Equalities = cell(1,nG);
-Organize.IC = zeros(nG,1);
+Organize.IC = zeros(nG+nL,1);
 Organize.Ramping = cell(1,nG);
 Organize.Inequalities = cell(1,nG);
 Organize.Transmission = cell(1,nL);
@@ -47,9 +40,24 @@ for i = 1:1:nG
         Organize.IC(i) = ic;
     end
 end
+nLcum = 0; %cumulative line #
+for net = 1:1:length(networkNames)
+    if ~strcmp(networkNames{net},'Hydro')
+        nLcum = nLcum+nLinet(net); %all hydro lines have initial state
+    else
+        for i = 1:1:nLinet(net) 
+            ic = ic+1;%initial condition state
+            QP.organize{1,nG + nLcum + i} = ic; %output state organized into matrix of time vs. generator (IC)   
+            Organize.IC(nG + nLcum + i) = ic;
+        end
+    end
+end
+    
 xL = 0;
+GenNames = cell(nG,1);
 for i = 1:1:nG
     Gen = Plant.Generator(i).(Op);
+    GenNames{i} = Plant.Generator(i).Name;
     s = length(Gen.states);%generator with multiple states
     if s>0
         if ~isempty(strfind(Plant.Generator(i).Type,'Storage'))
@@ -75,8 +83,18 @@ for i = 1:1:nG
                 Organize.SpinReserveStates(1,i) = xL +s+1; %state of spinning reserve at time 1
                 H(end+1) = 0;
                 f(end+1) = 0;
-                lb(end+1) = 0;
-                ub(end+1) = Plant.Generator(i).Size;
+                if isempty(strfind(Plant.Generator(i).Type,'Storage'))
+                    lb(end+1) = 0;
+                    ub(end+1) = Plant.Generator(i).Size;
+                else %ub for storage discharge
+                    if strcmp(Plant.Generator(i).Type,'Hydro Storage')
+                        lb(end+1) =  0;
+                        ub(end+1) = Plant.Generator(i).VariableStruct.MaxGenCapacity;
+                    else
+                        lb(end+1) = -Plant.Generator(i).OpMatA.Stor.PeakCharge;
+                        ub(end+1) = Plant.Generator(i).OpMatA.Stor.PeakDisch;
+                    end
+                end
             end
             xL = xL + s + 1;
         else
@@ -88,30 +106,33 @@ end
 %states for transmission lines
 nLcum = 0; %cumulative line #
 for net = 1:1:length(networkNames)
+    if strcmp(networkNames{net},'Hydro')
+        eff = [];
+        limit = Plant.subNet.lineLimit.(networkNames{net});
+        minimum = Plant.subNet.lineMinimum.(networkNames{net}); 
+    else
+        eff = Plant.subNet.lineEff.(networkNames{net});
+        limit = Plant.subNet.lineLimit.(networkNames{net}); 
+        minimum = zeros(nLinet(net),1);
+    end
     for i = 1:1:nLinet(net) 
         nLcum = nLcum+1;
-        if strcmp(networkNames{net},'Hydro')
-            
-        else
-            eff = Plant.subNet.lineEff.(networkNames{net});
-            limit = Plant.subNet.lineLimit.(networkNames{net}); 
-            QP.organize{1,nG+nLcum} = []; %no initial condition for lines
-            QP.organize{2,nG+nLcum} = xL+1+ic; %line state organized into matrix of time vs. line state
-            if length(eff(i,:))==1 || eff(i,2)==0 %uni-directional transfer, 1 state for each line
-                Organize.States(nG+nLcum)= {xL+1};
-                H(end+1:end+3) = 0;
-                f(end+1:end+3) = 0;
-                lb(end+1:end+3) = 0;
-                ub(end+1:end+3) = limit(i,1);
-                xL = xL + 1;
-            else% bi-directional transfer, 3 states for each line (state of the line and penalty term in each direction)
-                Organize.States(nG+nLcum)= {[xL+1, xL+2, xL+3]};
-                H(end+1:end+3) = [0 0 0];
-                f(end+1:end+3) = [0 0 0];
-                lb(end+1:end+3) = [-limit(i,2),0,0];
-                ub(end+1:end+3) = [limit(i,1), limit(i,1)*(1-eff(i,1)), limit(i,2)*(1-eff(i,2))];
-                xL = xL + 3;
-            end
+        QP.organize{1,nG+nLcum} = []; %no initial condition for lines
+        QP.organize{2,nG+nLcum} = xL+1+ic; %line state organized into matrix of time vs. line state
+        if isempty(eff) || length(eff(i,:))==1 || eff(i,2)==0 %uni-directional transfer, 1 state for each line
+            Organize.States(nG+nLcum)= {xL+1};
+            H(end+1) = 0;
+            f(end+1) = 0;
+            lb(end+1) = minimum(i);
+            ub(end+1) = limit(i,1);
+            xL = xL + 1;
+        else% bi-directional transfer, 3 states for each line (state of the line and penalty term in each direction)
+            Organize.States(nG+nLcum)= {[xL+1, xL+2, xL+3]};
+            H(end+1:end+3) = [0 0 0];
+            f(end+1:end+3) = [0 0 0];
+            lb(end+1:end+3) = [-limit(i,2),0,0];
+            ub(end+1:end+3) = [limit(i,1), limit(i,1)*(1-eff(i,1)), limit(i,2)*(1-eff(i,2))];
+            xL = xL + 3;
         end
     end
 end
@@ -158,36 +179,44 @@ end
 % Repeat power balance equalities and link equalities at t = 2:nS
 req = 0; % row index of the Aeq matrix and beq vector
 beq = [];
+Aeq = [];
 
 % The following puts together the energy balance equations
 % 1 energy/mass balance equation for each subNet node
 % Nodes were agregated if their line efficiencies were 1
 storRow = zeros(nG,1);
+hydroRowMass = zeros(nG,1);
+hydroRowEnergy = zeros(nG,1);
+nLcum = 0; %cumulative line #
 for net = 1:1:length(networkNames)
     n = length(Plant.subNet.(networkNames{net}));
     Organize.Balance.(networkNames{net}) = [];
     Organize.Demand.(networkNames{net}) = [];
-    if strcmp(networkNames{net},'Hydro')
-        
-    else
-        for i = 1:1:n
-            req = req+1;%there is an energy/mass balance at this node
-            Organize.Balance.(networkNames{net})(end+1) = req;
-            %%identify generators at this node
-            genI = Plant.subNet.(networkNames{net})(i).Equipment;
-            for j = 1:1:length(genI)
-                states = Organize.States{genI(j)};%states associated with gerator i
-                if any(strcmp(Plant.Generator(genI(j)).Type,{'Electric Storage';'Thermal Storage';}))
-                    storRow(genI(j)) = req;%record where you put values, so you can add t-1 state and divide by dt(t)
-                elseif strcmp(networkNames{net},'Electrical') && isfield(Plant.Generator(genI(j)).(Op).output,'E')
-                    Aeq(req,states) = Plant.Generator(genI(j)).(Op).output.E;
-                elseif strcmp(networkNames{net},'DistrictHeat') && isfield(Plant.Generator(genI(j)).(Op).output,'H')
-                    Aeq(req,states) = Plant.Generator(genI(j)).(Op).output.H;
-                elseif strcmp(networkNames{net},'DistrictCool') && isfield(Plant.Generator(genI(j)).(Op).output,'C')
-                    Aeq(req,states) = Plant.Generator(genI(j)).(Op).output.C;
+    for i = 1:1:n
+        req = req+1;%there is an energy/mass balance at this node
+        Organize.Balance.(networkNames{net})(end+1) = req;
+        %%identify generators at this node
+        genI = Plant.subNet.(networkNames{net})(i).Equipment;
+        for j = 1:1:length(genI)
+            states = Organize.States{genI(j)};%states associated with gerator i
+            if any(strcmp(Plant.Generator(genI(j)).Type,{'Electric Storage';'Thermal Storage';}))
+                storRow(genI(j)) = req;%record where you put values, so you can add t-1 state and divide by dt(t)
+            elseif strcmp(Plant.Generator(genI(j)).Type,'Hydro Storage')
+                if strcmp(networkNames{net},'Electrical')
+                    hydroRowEnergy(genI(j)) = req; %stor the mass balance equality row
+                elseif strcmp(networkNames{net},'Hydro')
+                    hydroRowMass(genI(j)) = req; %stor the mass balance equality row
                 end
+            elseif strcmp(networkNames{net},'Electrical') && isfield(Plant.Generator(genI(j)).(Op).output,'E')
+                Aeq(req,states) = Plant.Generator(genI(j)).(Op).output.E;
+            elseif strcmp(networkNames{net},'DistrictHeat') && isfield(Plant.Generator(genI(j)).(Op).output,'H')
+                Aeq(req,states) = Plant.Generator(genI(j)).(Op).output.H;
+            elseif strcmp(networkNames{net},'DistrictCool') && isfield(Plant.Generator(genI(j)).(Op).output,'C')
+                Aeq(req,states) = Plant.Generator(genI(j)).(Op).output.C;
             end
-            %%identify lines coming in and out
+        end
+        %%identify lines coming in and out of the node
+        if ~strcmp(networkNames{net},'Hydro') %hydro is done later because of the time of transfer of the lines
             connect = Plant.subNet.(networkNames{net})(i).connections;
             for j = 1:1:length(connect)
                 nName = Plant.subNet.(networkNames{net})(i).nodes(1); %name of current subnet node
@@ -197,7 +226,7 @@ for net = 1:1:length(networkNames)
                     I = find(strcmp(strcat(connect{j},'_',networkNames{net},'_',nName),Plant.subNet.lineNames.(networkNames{net})),1,'first');
                     dir = -1; %reverse direction
                 end
-                linestates = Organize.States{nG+I};
+                linestates = Organize.States{nG+nLcum+I};
                 if length(linestates)==1 %uni-directional transfer
                     if dir == 1 %power/water is leaving this node
                         Aeq(req,linestates) = -1;
@@ -212,23 +241,23 @@ for net = 1:1:length(networkNames)
                     end
                 end
             end
-            %%any heat loss term to balance equality
-            if strcmp('DistrictHeat',networkNames{net}) && Plant.optimoptions.excessHeat == 1 && Organize.HeatVented(1,i)~=0
-                Aeq(req,Organize.HeatVented(1,i)) = -1;
-            end
-            %%note any demands at this node
+        end
+        %%any heat loss term to balance equality
+        if strcmp('DistrictHeat',networkNames{net}) && Plant.optimoptions.excessHeat == 1 && Organize.HeatVented(1,i)~=0
+            Aeq(req,Organize.HeatVented(1,i)) = -1;
+        end
+        %%note any demands at this node
+        if ~isempty(Plant.subNet.(networkNames{net})(i).Load)
             Organize.Demand.(networkNames{net})(i) = Plant.subNet.(networkNames{net})(i).Load;
         end
     end
+    nLcum = nLcum + nLinet(net);
 end
-   
-hydroIndex = [];
-hydroRow = [];
-hydroSOC = [];
+
 for i = 1:1:nG
     %link is a field if there is more than one state and the states are linked by an inequality or an equality
     if isfield(Plant.Generator(i).(Op),'link') && isfield(Plant.Generator(i).(Op).link,'eq')
-        [m,n] = size(Plant.Generator(i).(Op).link.eq);
+        [m,~] = size(Plant.Generator(i).(Op).link.eq);
         states = Organize.States{i};%states associated with gerator i
         for k = 1:1:m
             Aeq(req+k,states) = Plant.Generator(i).(Op).link.eq(k,:);
@@ -236,13 +265,6 @@ for i = 1:1:nG
         end
         Organize.Equalities(i) = {req+1:req+m}; 
         req = req+m;
-    elseif strcmp(Plant.Generator(i).Type,'Hydro')
-        states = Organize.States{i};%states associated with generator i
-        Aeq(req+1,states(1:2)) = 1; %Flow for power and spill;
-        hydroIndex(end+1) = i;
-        hydroRow(end+1) = req+1;
-        hydroSOC(end+1) = states(3);
-        req = req + 1;
     end
 end
 
@@ -255,8 +277,12 @@ end
 r = 0; % row index of the A matrix & b vector
 %Ramping Inequalities
 Ramping = zeros(nG,1);
+HydroRow = zeros(nG,1);
 for i = 1:1:nG
-    if isfield(Plant.Generator(i).(Op),'Ramp') 
+    if strcmp(Plant.Generator(i).Type,'Hydro Storage')
+        HydroRow(i) = r+1;
+        r = r+3; %3 constraints for a hydro plant
+    elseif isfield(Plant.Generator(i).(Op),'Ramp') 
         Ramping(i) = r+1; 
         r = r+2;
     end
@@ -273,20 +299,18 @@ end
 %Transmission line inequalities (penalty terms)
 nLcum = 0; %cumulative line #
 for net = 1:1:length(networkNames)
-    for i = 1:1:nLinet(net)
-        nLcum = nLcum + 1;
-        if strcmp(networkNames{net},'Hydro')
-        
-        else
-            eff = Plant.subNet.lineEff.(networkNames{net});
+    if ~strcmp(networkNames{net},'Hydro')
+        eff = Plant.subNet.lineEff.(networkNames{net});
+        for i = 1:1:nLinet(net)
             if length(eff(i,:))==1 || eff(i,2)==0 %uni-directional transfer, 1 state for each line
                 %do nothing, no inequalities linking penalty states
             else%bi-directional power transfer
-                Organize.Transmission(nLcum) = {r+1:r+2}; 
+                Organize.Transmission(nLcum+i) = {r+1:r+2}; 
                 r = r+2;
             end
         end
     end
+    nLcum = nLcum + nLinet(net);
 end
 
 %spinning reserve inequalities (sum all spinning reserves & individual spinning reserves) 
@@ -297,7 +321,7 @@ for net = 1:1:length(networkNames)
         Organize.SpinReserve = r+1;
         r = r+1;
         for i = 1:1:nG
-            if isfield(Plant.Generator(i).OpMatA.output,'E') && (~isempty(strfind(Plant.Generator(i).Type,'Storage')) || Organize.Dispatchable(i))%electric storage & dispatchable electric generators have spinning reserve capacity
+            if isfield(Plant.Generator(i).OpMatA.output,'E') && ~isfield(Gen.output,'C') && (~isempty(strfind(Plant.Generator(i).Type,'Storage')) || Organize.Dispatchable(i))%electric storage & dispatchable electric generators have spinning reserve capacity
                 SpinRow(i) = r+1;
                 r = r+2;
             end
@@ -367,36 +391,88 @@ for i = 1:1:nG
     end
 end
 
-%hydro
-if ~isempty(hydroRow)
-    for t= 1:nS
-        for i = 1:1:length(hydroRow)
-            QP.Aeq((t-1)*t1Balances+hydroRow(i)+ic,(t-1)*t1States+hydroSOC(i)+ic) = 1/(convFactor*dt(t)); %SOC at t
-            if t==1
-                hydroIC = nnz(Organize.IC(1:hydroIndex(i))); %order in IC
-                QP.Aeq(hydroRow(i),hydroIC) = -1/(convFactor*dt(t));%SOC at IC
-            else
-                QP.Aeq((t-1)*t1Balances+hydroRow(i)+ic,(t-2)*t1States+hydroSOC(i)+ic) = -1/dt(t); %SOC at t-1
+%Hydro Equalities
+if any(hydroRowMass)
+    nLcum = 0; %cumulative line #
+    for net = 1:1:length(networkNames)
+        if strcmp(networkNames{net},'Hydro')
+            upriver = {};
+            downriver = {};
+            spill = {};
+            upLines = [];
+            downLines = [];
+            spillLines = [];
+            for i = 1:1:length(Plant.subNet.lineNames.Hydro)
+                name = Plant.subNet.lineNames.Hydro{i};
+                k = strfind(name,'_');
+                if strcmp(name(k(1)+1:k(2)-1),'Spill')
+                    spill(end+1) = {name(1:k(1)-1)};
+                    spillLines(end+1) = i;
+                else
+                    upriver(end+1) = {name(1:k(1)-1)}; %node names of the upriver node (origin of line segment)
+                    upLines(end+1) = i;
+                    downriver(end+1) = {name(k(2)+1:end)};% node names of the downriver node
+                    downLines(end+1) = i;
+                end
             end
-            if ~empty(Dam(i).VariableStruct.upriver)
-                T = Dam(i).VariableStruct.transTime; %Transit time to initially get to this dam from t=0
-                for k = 1:1:length(Dam(i).VariableStruct.upriver)%in case there are several connection upstream for current dam
-                    diffT = Dam(i).VariableStruct.diffTime(k); %difference times between upstream and current dam
-                    if t > T %if t > add upstream flow states to this row of Aeq
-                        statesprev = Organize.States{Dam(i).VariableStruct.upriverNum(k)};%states associated with upstream dam; How to get that upstream number
-                        QP.Aeq((t-1)*t1Balances+hydroRow(i)+ic,(t-diffT-1)*t1States+statesprev(1:2)+ic) = -1; %power flow(t-T,i-1); Spill flow(t-T,i-1)
-                    elseif t == T %If t = time for flow from upstream then start IC for upstream dam
-                        hydroICprev = nnz(Organize.IC(1:hydroIndex(Dam(i).VariableStruct.upriverNum(k)))); %order in IC for upstream dam
-                        QP.Aeq((t-1)*t1Balances+hydroRow(i)+ic,hydroICprev+ic) = -1; %power flow(IC,i-1); Spill flow(IC,i-1)
-                    elseif t < T
-                        %if t < time for flow from upstream then do nothing, constant is
-                        %put into beq in update matrices with source flows
+            for m = 1:1:length(Plant.subNet.Hydro)
+                equip = Plant.subNet.Hydro(m).Equipment;
+                J = upLines(strcmp(Plant.subNet.Hydro(m).nodes,upriver));%lines leaving this node, i.e. this node is the upriver node (should be at most 1)
+                K = downLines(strcmp(Plant.subNet.Hydro(m).nodes,downriver));%lines entering this node, i.e. this node is the downriver node
+                S = spillLines(strcmp(Plant.subNet.Hydro(m).nodes,spill));% spill flow of this node, subtracts from the power generation  (should be at most 1)
+                for t = 1:1:nS
+                    %river segments flowing into this node
+                    for j = 1:1:length(K)
+                        T = Plant.subNet.lineTime.Hydro(K(j));
+                        tt = sum(dt(1:t));
+                        if tt<T                            
+                            %Do nothing; the upriver flow rate will be updated in updateMatrices
+                        elseif tt>T && tt<=T+dt(1)%between initial condition & first step
+                            frac = (tt-T)/dt(1);%portion of flow from step 1, remainder from line initial condition
+                            QP.Aeq((t-1)*t1Balances+hydroRowMass(m)+ic,Organize.States{nG+nLcum+K(j)}+ic)= frac/(12.1*dt(t)); % Qupriver at step 1, conversion factor is from 1000 ft^3/s to 1000 acre ft (1000 acre-ft = 12.1 x 1000 ft^3/s * 1 hr)
+                            QP.Aeq((t-1)*t1Balances+hydroRowMass(m)+ic,nnz(Organize.IC(1:nG+nLcum+K(j))))= (1-frac)/(12.1*dt(t)); % Qupriver initial condition, conversion factor is from 1000 ft^3/s to 1000 acre ft (1000 acre-ft = 12.1 x 1000 ft^3/s * 1 hr)
+                        else
+                            step = 2;
+                            while tt>(T+sum(dt(1:step)))
+                                step = step+1;
+                            end
+                            frac = (tt-(T+sum(dt(1:step))))/dt(step);%portion of flow from step, remainder from previous step
+                            QP.Aeq((t-1)*t1Balances+hydroRowMass(m)+ic,(step-1)*t1States+Organize.States{nG+nLcum+K(j)}+ic)= frac/(12.1*dt(t)); % Qupriver, conversion factor is from 1000 ft^3/s to 1000 acre ft (1000 acre-ft = 12.1 x 1000 ft^3/s * 1 hr)
+                            QP.Aeq((t-1)*t1Balances+hydroRowMass(m)+ic,(step-2)*t1States+Organize.States{nG+nLcum+K(j)}+ic)= (1-frac)/(12.1*dt(t)); % Qupriver, conversion factor is from 1000 ft^3/s to 1000 acre ft (1000 acre-ft = 12.1 x 1000 ft^3/s * 1 hr)
+                        end 
                     end 
+                    %water flow out of the node
+                    QP.Aeq((t-1)*t1Balances+hydroRowMass(m)+ic,(t-1)*t1States+Organize.States{nG+nLcum+J}+ic)= -1/(12.1*dt(t)); %Qdownriver, conversion factor is from 1000 ft^3/s to 1000 acre ft (1000 acre-ft = 12.1 x 1000 ft^3/s * 1 hr)
+                    
+                end 
+                for k = 1:1:length(equip)
+                    I = equip(k); %Index in generator list
+                    if strcmp(Plant.Generator(I).Type,'Hydro Storage')
+                        for t = 1:1:nS
+                            states = Organize.States{I};%states associated with generator i
+                            %SOC of the reservior in 1000 acre ft.
+                            QP.Aeq((t-1)*t1Balances+hydroRowMass(m)+ic,(t-1)*t1States+states(1)+ic) = 1/dt(t); %SOC at t
+                            if t==1
+                                hydroIC = nnz(Organize.IC(1:i)); %order in IC
+                                QP.Aeq(hydroRowMass(m),hydroIC) = -1/dt(t);%SOC at IC
+                            else
+                                QP.Aeq((t-1)*t1Balances+hydroRowMass(m)+ic,(t-2)*t1States+states(1)+ic) = -1/dt(t); %SOC at t-1
+                            end
+                            %Converting water flow to power
+                            QP.Aeq((t-1)*t1Balances+hydroRowEnergy(m)+ic,(t-1)*t1States+Organize.States{nG+nLcum+J}+ic)= Plant.Generator(I).OpMatA.output.E/dt(t); %Qdownriver * energy conversion factor (1000 ft^3/s to kW)
+                            if ~isempty(S)
+                                QP.Aeq((t-1)*t1Balances+hydroRowEnergy(m)+ic,(t-1)*t1States+Organize.States{nG+nLcum+S}+ic) = -Plant.Generator(I).OpMatA.output.E/dt(t); %Spillway flow (subtracted from downriver flow)
+                            end
+                        end
+                    else
+                        %% add water district here
+                    end
                 end
             end
         end
-    end
-end
+        nLcum = nLcum + nLinet(net);
+    end  
+end  
 
 % number of generator inequality constraints & energy imbalances at each time step will be r 
 % there are 2 ramping constraints on each generator/storage
@@ -409,8 +485,8 @@ s = ic;
 for t= 1:nS
     for i = 1:1:nG
         states = Organize.States{i};
-        %Ramping
-        if isfield(Plant.Generator(i).(Op),'Ramp')
+        %Ramping (Hydro ramping handled later)
+        if Ramping(i)>0
             %%if storage, ramping only affects 1st state)
             if ~isempty(strfind(Plant.Generator(i).Type,'Storage'))
                 rampStates = states(1);
@@ -477,25 +553,82 @@ for t= 1:nS
                 QP.A(r+SpinRow(i)+1,s+SRstates) = 1; %SR + power <= Size
                 QP.A(r+SpinRow(i)+1,s+states) = 1;
                 QP.b(r+SpinRow(i)+1) = Plant.Generator(i).Size; %max capacity constraint
-            elseif SpinRow(i)~=0 %electric storage 
-                eff = Plant.Generator(i).(Op).Stor.DischEff;
-                QP.A(r+SpinRow(i),s+SRstate) = 1; %SR + eff*(SOC(t-1) - SOC(t))/dt <= peak discharge
-                QP.A(r+SpinRow(i),s+states(1)) = -eff/dt(t);
-                QP.A(r+SpinRow(i)+1,s+SRstate) = 1; %SR - SOC(t-1)/dt <= 0
-                if t ==1 %SOC change from IC
-                    QP.A(SpinRow(i),nnz(Organize.IC(1:i))) = eff/dt(t); % SOC at t-1
-                    QP.A(SpinRow(i)+1,nnz(Organize.IC(1:i))) = -eff/dt(t); % SOC at t-1
+            elseif SpinRow(i)~=0 
+                if ~strcmp(Plant.Generator(i).Type,'Hydro Storage')%electric storage 
+                    eff = Plant.Generator(i).(Op).Stor.DischEff;
+                    QP.A(r+SpinRow(i),s+SRstate) = 1; %SR + eff*(SOC(t-1) - SOC(t))/dt <= peak discharge
+                    QP.A(r+SpinRow(i),s+states(1)) = -eff/dt(t);
+                    QP.A(r+SpinRow(i)+1,s+SRstate) = 1; %SR - SOC(t-1)/dt <= 0
+                    if t ==1 %SOC change from IC
+                        QP.A(SpinRow(i),nnz(Organize.IC(1:i))) = eff/dt(t); % SOC at t-1
+                        QP.A(SpinRow(i)+1,nnz(Organize.IC(1:i))) = -eff/dt(t); % SOC at t-1
+                    else
+                        QP.A(r+SpinRow(i),s-t1States+states) = eff/dt(t); % SOC at t-1
+                        QP.A(r+SpinRow(i)+1,s-t1States+states) = -eff/dt(t); % SOC at t-1
+                    end
+                    QP.b(r+SpinRow(i)) = Plant.Generator(i).(Op).Ramp.b(2);%peak discharge constraint
                 else
-                    QP.A(r+SpinRow(i),s-t1States+states) = eff/dt(t); % SOC at t-1
-                    QP.A(r+SpinRow(i)+1,s-t1States+states) = -eff/dt(t); % SOC at t-1
+                    %%Hydro spinning reserve
+                    
                 end
-                QP.b(r+SpinRow(i)) = Plant.Generator(i).(Op).Ramp.b(2);%peak discharge constraint
             end
         end
     end
     r = r+t1ineq;
     s = s+t1States;
 end
+
+%% Hydro Inequalities (2 ramping constraints and max generator flow (all applied to the flow through the generators)
+nLcum = 0; %cumulative line #
+for net = 1:1:length(networkNames)
+    if ~strcmp(networkNames{net},'Hydro')
+        nLcum = nLcum + nLinet(net);
+    else
+        for m = 1:1:length(Plant.subNet.Hydro)
+            equip = Plant.subNet.Hydro(m).Equipment;
+            J = upLines(strcmp(Plant.subNet.Hydro(m).nodes,upriver));%lines leaving this node, i.e. this node is the upriver node (should be at most 1)
+            S = spillLines(strcmp(Plant.subNet.Hydro(m).nodes,spill));% spill flow of this node, subtracts from the power generation  (should be at most 1)
+            for k = 1:1:length(equip)
+                I = equip(k); %Index in generator list
+                if strcmp(Plant.Generator(I).Type,'Hydro Storage')
+                    r = 0;
+                    s = ic;
+                    for t = 1:1:nS
+                        QP.A(r+HydroRow(I),s+Organize.States{nG+nLcum+J}) = 1; %max flow constraint
+                        QP.A(r+HydroRow(I)+1,s+Organize.States{nG+nLcum+J}) = Plant.Generator(I).(Op).output.E;%ramp up constraint total flow at t
+                        QP.A(r+HydroRow(I)+2,s+Organize.States{nG+nLcum+J}) = -Plant.Generator(I).(Op).output.E;%ramp down constraint total flow at t
+                        
+                        QP.b(r+HydroRow(I)) = Plant.Generator(I).VariableStruct.MaxGenFlow;%max flow constrain
+                        QP.b(r+HydroRow(I)+1) = Plant.Generator(I).VariableStruct.RampUp;%max increase in power
+                        QP.b(r+HydroRow(I)+2) = Plant.Generator(I).VariableStruct.RampDown;%max decrease in power
+                        if t == 1
+                            QP.A(r+HydroRow(I)+1,nnz(Organize.IC(1:nG+nLcum+J))) = -Plant.Generator(I).(Op).output.E;%ramp up constraint total flow at t-1
+                            QP.A(r+HydroRow(I)+2,nnz(Organize.IC(1:nG+nLcum+J))) = Plant.Generator(I).(Op).output.E;%ramp down constraint total flow at t-1
+                        else
+                            QP.A(r+HydroRow(I)+1,s-t1States+Organize.States{nG+nLcum+J}) = -Plant.Generator(I).(Op).output.E;%ramp up constraint total flow at t-1
+                            QP.A(r+HydroRow(I)+2,s-t1States+Organize.States{nG+nLcum+J}) = Plant.Generator(I).(Op).output.E;%ramp down constraint total flow at t-1
+                        end
+                        if ~isempty(S) %spill flow (power flow = total flow - spill flow)
+                            QP.A(r+HydroRow(I),s+Organize.States{nG+nLcum+S}) = -1; %max flow constraint
+                            QP.A(r+HydroRow(I)+1,s+Organize.States{nG+nLcum+S}) = -1; %ramp up constraint spill flow at t
+                            QP.A(r+HydroRow(I)+2,s+Organize.States{nG+nLcum+S}) = 1; %ramp down constraint spill flow at t
+                            if t == 1
+                                QP.A(r+HydroRow(I)+1,nnz(Organize.IC(1:nG+nLcum+S))) = Plant.Generator(I).(Op).output.E;%ramp up constraint spill flow at t-1
+                                QP.A(r+HydroRow(I)+2,nnz(Organize.IC(1:nG+nLcum+S))) = -Plant.Generator(I).(Op).output.E;%ramp down constraint spill flow at t-1
+                            else
+                                QP.A(r+HydroRow(I)+1,s-t1States+Organize.States{nG+nLcum+S}) = Plant.Generator(I).(Op).output.E;%ramp up constraint spill flow at t-1
+                                QP.A(r+HydroRow(I)+2,s-t1States+Organize.States{nG+nLcum+S}) = -Plant.Generator(I).(Op).output.E;%ramp down constraint spill flow at t-1
+                            end
+                        end
+                        r = r+t1ineq;
+                        s = s+t1States;
+                    end
+                end
+            end
+        end
+    end
+end
+
 
 %% Put together indexing of matrix equation order and state order for use later
 %list of states associated with each generator at all time steps
@@ -564,8 +697,10 @@ end
 for i = 1:1:nL
     s = Organize.Transmission{i};
     line = [];
-    for t = 1:1:nS
-        line(end+1:end+2) = s + (t-1)*t1ineq;
+    if ~isempty(s) %only bi-directional lines
+        for t = 1:1:nS
+            line(end+1:end+2) = s + (t-1)*t1ineq;
+        end
     end
     Organize.Transmission(i) = {line};
 end

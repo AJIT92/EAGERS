@@ -14,14 +14,8 @@ for i = 1:1:nG
     end
 end
 %% current best guess
-[GenDisp,~,Feasible] = DispatchQP(QP,Locked);
-if Feasible ~=1
-    [GenDisp, ~, Feasible] = FindFeasible(QP,Locked);
-    if ~(Feasible==1)%% hopefully not here
-        disp('error: Cannot Find Feasible Dispatch');
-    end
-end
-Cost = sum(NetCostCalc(FirstDisp,Timestamp,'Dispatch'));
+GenDisp = FirstDisp;
+Cost = sum(NetCostCalc(GenDisp,Timestamp,'Dispatch'));
 %% Proceed with rules
 index = (1:nS)';
 for j = 1:1:length(dGen)

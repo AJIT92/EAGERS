@@ -22,7 +22,7 @@ function varargout = MainScreen1(varargin)
 
 % Edit the above text to modify the response to help MainScreen1
 
-% Last Modified by GUIDE v2.5 12-Apr-2017 16:51:46
+% Last Modified by GUIDE v2.5 04-May-2017 14:44:07
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -62,6 +62,13 @@ guidata(hObject, handles);
 % uiwait(handles.figure1);
 global Plant testSystems selectedSystem Model_dir SYSINDEX
 Plant.optimoptions.method = 'Planning';
+if ~isfield(Plant.optimoptions,'MixedInteger')
+    Plant.optimoptions.MixedInteger = true;
+end
+if ~isfield(Plant.optimoptions,'SpinReserve')
+    Plant.optimoptions.SpinReserve = false;
+    Plant.optimoptions.SpinReservePerc = 0;
+end
 if isfield(Plant.Generator,'OpMatA')
     Plant.Generator = rmfield(Plant.Generator,'OpMatA');
 end
@@ -81,6 +88,19 @@ files = dir(fullfile(Model_dir, 'Plant','*.mat'));
 list=strrep({files.name},'.mat','');
 set(handles.popupmenuProjectMain,'string',list)
 set(handles.popupmenuProjectMain,'value',strmatch(Plant.Name,list,'exact'))
+
+set(handles.sequential, 'value', Plant.optimoptions.sequential);
+set(handles.simultaneous, 'value', ~Plant.optimoptions.sequential);
+set(handles.excessHeat, 'value', Plant.optimoptions.excessHeat);
+
+set(handles.NoMixedInteger, 'value', ~Plant.optimoptions.MixedInteger);
+set(handles.MixedInteger, 'value', Plant.optimoptions.MixedInteger);
+
+set(handles.noSpinReserve, 'value', ~Plant.optimoptions.SpinReserve);
+set(handles.SpinReserve, 'value', Plant.optimoptions.SpinReserve);
+set(handles.SpinReservePerc, 'string', Plant.optimoptions.SpinReservePerc);
+set(handles.SpinReserveBuffer, 'string', Plant.optimoptions.Buffer);
+
 EditSystem(handles)
 
 % --- Outputs from this function are returned to the command line.
@@ -714,19 +734,19 @@ AddSystem(hObject,handles)
 function ColdStor_Callback(hObject, eventdata, handles)
 AddSystem(hObject,handles)
 
-function HighTempStor_Callback(hObject, eventdata, handles)
-AddSystem(hObject,handles)
-
 function HotStor_Callback(hObject, eventdata, handles)
 AddSystem(hObject,handles)
 
 function Battery_Callback(hObject, eventdata, handles)
 AddSystem(hObject,handles)
 
+function Utility_Callback(hObject, eventdata, handles)
+AddSystem(hObject,handles)
+
 % --- Executes on button press in pushbuttonRemove.
 function pushbuttonRemove_Callback(hObject, eventdata, handles)
 global Plant SYSINDEX
-if SYSINDEX ~= 0
+if SYSINDEX > 0
     str = strcat(Plant.Generator(SYSINDEX).Type,'.',Plant.Generator(SYSINDEX).Name);
     for n = 1:1:length(Plant.Network)
         Plant.Network(n).Equipment = Plant.Network(n).Equipment(~strcmp(str,Plant.Network(n).Equipment));
@@ -791,7 +811,7 @@ else
 end
 
 
-%% Need to automatically creat these control menus for all dispatchable generators
+%% Need to automatically create these control menus for all dispatchable generators
 function popupmenuSys1_Callback(hObject, eventdata, handles)
 
 % --- Executes during object creation, after setting all properties.
@@ -809,4 +829,77 @@ if isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColo
 end
 
 
+function uipanelMixedInteger_SelectionChangeFcn(hObject, eventdata, handles)
+global Plant
+switch get(eventdata.NewValue,'Tag')
+    case 'NoMixedInteger'
+        Plant.optimoptions.MixedInteger = 0;
+    case 'MixedInteger'
+        Plant.optimoptions.MixedInteger = 1;
+end
+
+function SpinningReserve_SelectionChangeFcn(hObject, eventdata, handles)
+global Plant
+switch get(eventdata.NewValue,'Tag')
+    case 'noSpinReserve'
+        Plant.optimoptions.SpinReserve = false;
+    case 'SpinReserve'
+        Plant.optimoptions.SpinReserve = true;
+        Plant.optimoptions.SpinReservePerc = str2double(get(handles.SpinReservePerc, 'String'));
+end
+
+
+function SpinReservePerc_Callback(hObject, eventdata, handles)
+global Plant
+Plant.optimoptions.SpinReservePerc = str2double(get(handles.SpinReservePerc, 'String'));
+
+function SpinReservePerc_CreateFcn(hObject, eventdata, handles)
+if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor','white');
+end
+
+
+function SpinReserveBuffer_Callback(hObject, eventdata, handles)
+global Plant
+Plant.optimoptions.Buffer = str2double(get(handles.editBuffer, 'String'));
+
+function SpinReserveBuffer_CreateFcn(hObject, eventdata, handles)
+if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor','white');
+end
+
+
+function excessHeat_Callback(hObject, eventdata, handles)
+global Plant
+Plant.optimoptions.excessHeat = get(hObject, 'Value');
+
+
+function Interval_Callback(hObject, eventdata, handles)
+global Plant
+Plant.optimoptions.Interval = str2double(get(handles.Interval, 'String'));
+
+function Interval_CreateFcn(hObject, eventdata, handles)
+if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor','white');
+end
+
+
+function Resolution_Callback(hObject, eventdata, handles)
+global Plant
+Plant.optimoptions.Resolution = str2double(get(handles.Resolution, 'String'));
+
+function Resolution_CreateFcn(hObject, eventdata, handles)
+if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor','white');
+end
+
+
+function Horizon_Callback(hObject, eventdata, handles)
+global Plant
+Plant.optimoptions.Horizon = str2double(get(handles.Horizon, 'String'));
+
+function Horizon_CreateFcn(hObject, eventdata, handles)
+if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor','white');
+end
 

@@ -34,19 +34,25 @@ switch str
             isType = strcmp('CHP Generator',type).*(~isFC) + ...
                 strcmp('Electric Generator',type).*(~isFC);
         end
-    case {'Electric Utility'}
-        isType = strcmp('Utility',type);% .* strcmp('Electricity',source);
-    case {'Solar PV'}
+    case 'Utility'
+        isType = strcmp('Utility',type);
+    case 'Solar PV'
         isType = strcmp('Solar',type);
-    case {'Battery'}
+    case 'Air Heater'
+        isType = strcmp('Heater',type);
+    case 'TES 2' % feeds Hot Water Demands
+        isType = strcmp('Thermal Storage',type).*strcmp('Heat',source);
+    case 'TES 3' % feeds Cooling Demands
+        isType = strcmp('Thermal Storage',type).*strcmp('Cooling',source);
+    case 'Battery'
         isType = strcmp('Electric Storage',type);
-    case {'Heating Demands'}
+    case 'Heating Demands'
         SYSINDEX = -1;
-    case {'Hot Water Demands'}
+    case 'Hot Water Demands'
         SYSINDEX = -2;
-    case {'Cooling Demands'}
+    case 'Cooling Demands'
         SYSINDEX = -3;
-    case {'AC / DC Conversion'}
+    case 'AC / DC Conversion'
         SYSINDEX = -4;
 end
 isType = nonzeros(linspace(1,nG,nG)'.*isType);
@@ -65,7 +71,7 @@ if length(isType) > 1
 elseif length(isType) == 1
     SYSINDEX = isType;
     EditSystem(handles)
-else
+else % non-generator types (Demands and Ac / DC Conversion)
     EditSystem(handles)
 end
 

@@ -1,10 +1,20 @@
 function marginal = updateMarginalCost(Dispatch,scaleCost,Time)
 global Plant
 dt = Time-[0;Time(1:end-1)];
-Outs = Plant.optimoptions.Outputs;
-for i = 1:1:length(Outs)
-    Out.(Outs{i}) = [];
-    storType.(Outs{i}) = [];
+networkNames = fieldnames(Plant.Network);
+networkNames = networkNames(~strcmp('name',networkNames));
+networkNames = networkNames(~strcmp('Equipment',networkNames));
+for i = 1:1:length(networkNames)
+    storType.(networkNames{i}) = [];
+    if strcmp(networkNames{i},'Electrical')
+        Out.E = [];
+    elseif strcmp(networkNames{i},'DistrictHeat')
+        Out.H = [];
+    elseif strcmp(networkNames{i},'DistrictCool')
+        Out.C = [];
+    elseif strcmp(networkNames{i},'Hydro')
+        Out.W = [];
+    end
 end
 marginal =[];
 nG = length(Plant.Generator);
@@ -17,7 +27,7 @@ for i = 1:1:nG
 end
 marginCost = zeros(4,nG);
 stor = [];
-Out.CHP = [];
+CHP = [];
 I = zeros(1,nG);
 for i = 1:1:nG
     if Plant.Generator(i).Enabled
@@ -30,9 +40,14 @@ for i = 1:1:nG
             marginCost(4,i) = Plant.Generator(i).OpMatB.constCost/Plant.Generator(i).Size;%constant cost/upperbound
         elseif isfield(Plant.Generator(i).OpMatA,'Stor')
             stor(end+1) = i;
-            S = fieldnames(Plant.Generator(i).OpMatA.output);
-            if isfield(Out,(S{1}))
-                storType.(S{1})(end+1) = i;
+            if strcmp(Plant.Generator(i).Source,'Electricity')
+                storType.Electrical(end+1) = i;
+            elseif strcmp(Plant.Generator(i).Source,'Heat')
+                storType.DistrictHeat(end+1) = i;
+            elseif strcmp(Plant.Generator(i).Source,'Cooling')
+                storType.DistrictCool(end+1) = i;
+            elseif strcmp(Plant.Generator(i).Source,'Water')
+                storType.Hydro(end+1) = i;
             end
         elseif~isempty(s) %utilities and single state generators (linear cost term)
             I(i) = UB(i);
@@ -45,7 +60,7 @@ for i = 1:1:nG
             S = fieldnames(Plant.Generator(i).OpMatA.output);
             if length(S)==2 && ismember('H',S) && ismember('E',S)
                 Out.E(end+1) = i;
-                Out.CHP(end+1) = i;
+                CHP(end+1) = i;
             elseif isfield(Out, (S{1}))
                 Out.(S{1})(end+1) = i;
             end
@@ -76,9 +91,17 @@ for i = 1:1:length(Type)
     if ~isfield(marginal,(Type{i}))
         marginal.(Type{i}) = [];
     end
-    gen = Out.(Type{i});
     stor = storType.(Type{i});
-    if strcmp(Type{i},'C') && Plant.optimoptions.sequential == 0 %chillers have no cost (show up as electric load)
+    if strcmp(Type{i},'Electrical')
+        gen = Out.E;
+    elseif strcmp(Type{i},'DistrictHeat')
+        gen = Out.H;
+    elseif strcmp(Type{i},'DistrictCool')
+        gen = Out.C;
+    elseif strcmp(Type{i},'Hydro')
+        gen = Out.W;
+    end
+    if strcmp(Type{i},'DistrictCool') && Plant.optimoptions.sequential == 0 %chillers have no cost (show up as electric load)
         Egen = Out.E;
         for j = 1:1:length(gen)
             Cratio = Plant.Generator(gen(j)).Output.Cooling(end);
@@ -100,17 +123,17 @@ for i = 1:1:length(Type)
     
     MinThisType = minMarginCost(:,gen);
     MaxThisType = maxMarginCost(:,gen);
-    if ~isempty(Out.CHP)
-        if strcmp(Type{i},'E')
-            for j = 1:1:length(Out.CHP)
-                [~,k] = ismember(Out.CHP(j),gen);
+    if ~isempty(CHP)
+        if strcmp(Type{i},'Electrical')
+            for j = 1:1:length(CHP)
+                [~,k] = ismember(CHP(j),gen);
                 MinThisType(:,k) = 0.75*MinThisType(:,k); %assign 25% of the generator cost to the heat production
                 MaxThisType(:,k) = 0.75*MaxThisType(:,k); %assign 25% of the generator cost to the heat production
             end
         end
-        if strcmp(Type{i},'H')
-            MinThisType(:,end+1:end+length(Out.CHP)) = minMarginCost(:,Out.CHP)*.25; %assign 25% of the generator cost to the heat production
-            MaxThisType(:,end+1:end+length(Out.CHP)) = maxMarginCost(:,Out.CHP)*.25; %assign 25% of the generator cost to the heat production
+        if strcmp(Type{i},'DistrictHeat')
+            MinThisType(:,end+1:end+length(CHP)) = minMarginCost(:,CHP)*.25; %assign 25% of the generator cost to the heat production
+            MaxThisType(:,end+1:end+length(CHP)) = maxMarginCost(:,CHP)*.25; %assign 25% of the generator cost to the heat production
         end
     end
     
